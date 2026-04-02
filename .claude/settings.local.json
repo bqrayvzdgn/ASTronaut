@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"const t = require\\('@babel/traverse'\\); console.log\\('traverse type:', typeof t, 'default type:', typeof t.default\\)\")",
+      "Bash(npx tsc:*)",
+      "Bash(node -e \"const p = require\\('@babel/parser'\\); console.log\\(typeof p.parse\\)\")",
+      "Bash(npx jest:*)"
+    ]
+  }
+}

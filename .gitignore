@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+*.pem
+*.key
+coverage/
+*.log
+.DS_Store
+analyzer/bin/
+analyzer/obj/
