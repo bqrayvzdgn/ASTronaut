@@ -92,6 +92,7 @@ All parsers produce `ParseResult` (defined in `src/parser/types.ts`) containing 
 - All changes must go through a feature branch: `git checkout -b feature/<name>` from `prod`.
 - Open a PR to `prod` and verify the changes work before merging.
 - Branch naming: `feature/`, `fix/`, `chore/` prefixes.
+- Delete merged branches (both local and remote) after PR is merged. Only `prod` should remain.
 
 ## Workflow Orchestration
 
