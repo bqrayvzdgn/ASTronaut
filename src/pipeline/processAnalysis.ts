@@ -10,11 +10,32 @@ import { loadAutodocConfig } from "../config/autodocConfig";
 import { detectFramework, Framework } from "../detector/frameworkDetector";
 import { generateOpenApiSpec } from "../generator/openApiGenerator";
 import { db } from "../db/connection";
-import { analyses, repos } from "../db/schema";
+import { analyses, repos, webhookEvents } from "../db/schema";
 import type { ParseResult } from "../parser/types";
+
+async function updateWebhookStatus(
+  webhookEventId: number | undefined,
+  status: "processing" | "done" | "skipped" | "error",
+  errorMessage?: string
+): Promise<void> {
+  if (!webhookEventId) return;
+  try {
+    await db
+      .update(webhookEvents)
+      .set({
+        processed: status,
+        processedAt: new Date(),
+        ...(errorMessage ? { errorMessage } : {}),
+      })
+      .where(eq(webhookEvents.id, webhookEventId));
+  } catch {
+    // Status tracking failure should not crash the pipeline
+  }
+}
 
 export async function processAnalysis(item: QueueItem): Promise<void> {
   const payload = item.payload as any;
+  const webhookEventId = item.webhookEventId;
 
   const owner: string = payload.repository.owner.login;
   const repo: string = payload.repository.name;
@@ -25,6 +46,7 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
   const startTime = Date.now();
 
   log.info("Starting analysis pipeline");
+  await updateWebhookStatus(webhookEventId, "processing");
 
   // 1. Permission check
   let token: string;
@@ -44,6 +66,7 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
       : "no push permission";
     log.warn({ reason }, "Skipping analysis due to permission restrictions");
 
+    await updateWebhookStatus(webhookEventId, "skipped");
     await saveAnalysis({
       owner,
       repo,
@@ -114,8 +137,16 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
       prUrl: prResult.prUrl,
       durationMs: Date.now() - startTime,
     });
+
+    await updateWebhookStatus(webhookEventId, "done");
   } catch (err) {
     log.error({ err }, "Analysis pipeline failed");
+
+    await updateWebhookStatus(
+      webhookEventId,
+      "error",
+      err instanceof Error ? err.message : String(err)
+    );
 
     await saveAnalysis({
       owner,
