@@ -290,6 +290,107 @@ function wrapInProgram(node: Node): any {
 }
 
 // ---------------------------------------------------------------------------
+// Auth detection: find common Next.js authentication patterns
+// ---------------------------------------------------------------------------
+
+function detectAuth(node: Node): string | null {
+  let authPattern: string | null = null;
+
+  traverse(
+    wrapInProgram(node),
+    {
+      CallExpression(p: any) {
+        if (authPattern) return;
+        const callee = p.node.callee;
+
+        // getServerSession() — NextAuth v4
+        if (callee.type === "Identifier" && callee.name === "getServerSession") {
+          authPattern = "Bearer";
+          return;
+        }
+
+        // auth() — NextAuth v5
+        if (callee.type === "Identifier" && callee.name === "auth") {
+          authPattern = "Bearer";
+          return;
+        }
+
+        // headers().get('authorization') or headers().get('Authorization')
+        if (
+          callee.type === "MemberExpression" &&
+          callee.property?.name === "get" &&
+          callee.object?.type === "CallExpression" &&
+          callee.object.callee?.type === "Identifier" &&
+          callee.object.callee.name === "headers"
+        ) {
+          const arg = p.node.arguments?.[0];
+          if (
+            arg?.type === "StringLiteral" &&
+            arg.value.toLowerCase() === "authorization"
+          ) {
+            authPattern = "Bearer";
+            return;
+          }
+        }
+
+        // request.headers.get('authorization') or req.headers.get('authorization')
+        if (
+          callee.type === "MemberExpression" &&
+          callee.property?.name === "get" &&
+          callee.object?.type === "MemberExpression" &&
+          callee.object.property?.name === "headers" &&
+          callee.object.object?.type === "Identifier"
+        ) {
+          const arg = p.node.arguments?.[0];
+          if (
+            arg?.type === "StringLiteral" &&
+            arg.value.toLowerCase() === "authorization"
+          ) {
+            authPattern = "Bearer";
+            return;
+          }
+        }
+      },
+
+      // req.headers['authorization'] or req.headers.authorization (Pages Router)
+      MemberExpression(p: any) {
+        if (authPattern) return;
+        const node = p.node;
+
+        if (
+          node.object?.type === "MemberExpression" &&
+          node.object.property?.name === "headers" &&
+          node.object.object?.type === "Identifier"
+        ) {
+          // req.headers.authorization
+          if (
+            !node.computed &&
+            node.property?.type === "Identifier" &&
+            node.property.name === "authorization"
+          ) {
+            authPattern = "Bearer";
+            return;
+          }
+          // req.headers['authorization']
+          if (
+            node.computed &&
+            node.property?.type === "StringLiteral" &&
+            node.property.value.toLowerCase() === "authorization"
+          ) {
+            authPattern = "Bearer";
+            return;
+          }
+        }
+      },
+    },
+    undefined,
+    { noScope: true }
+  );
+
+  return authPattern;
+}
+
+// ---------------------------------------------------------------------------
 // App Router parser: extract named exports (GET, POST, etc.)
 // ---------------------------------------------------------------------------
 
@@ -322,6 +423,7 @@ function parseAppRouterFile(
         const description = getLeadingJSDoc(p.node) || getLeadingJSDoc(decl);
         const requestBody = extractAppRouterBody(decl);
         const queryParams = extractAppRouterSearchParams(decl);
+        const auth = detectAuth(decl);
 
         routes.push({
           path: routePath,
@@ -331,7 +433,7 @@ function parseAppRouterFile(
           params: [...pathParams, ...queryParams],
           requestBody,
           responses: [],
-          auth: null,
+          auth,
           middleware: [],
           description,
           source,
@@ -358,6 +460,7 @@ function parseAppRouterFile(
           const description = getLeadingJSDoc(p.node) || getLeadingJSDoc(decl);
           const requestBody = fnNode ? extractAppRouterBody(fnNode) : null;
           const queryParams = fnNode ? extractAppRouterSearchParams(fnNode) : [];
+          const auth = fnNode ? detectAuth(fnNode) : null;
 
           routes.push({
             path: routePath,
@@ -367,7 +470,7 @@ function parseAppRouterFile(
             params: [...pathParams, ...queryParams],
             requestBody,
             responses: [],
-            auth: null,
+            auth,
             middleware: [],
             description,
             source,
@@ -542,6 +645,7 @@ function parsePagesRouterFile(
   // Extract query params and body
   const queryParams = extractPagesQueryParams(handlerNode);
   const requestBody = extractPagesRequestBody(handlerNode);
+  const auth = detectAuth(handlerNode);
 
   // Get handler name
   const controller = handlerNode.id?.name ?? null;
@@ -556,7 +660,7 @@ function parsePagesRouterFile(
       params: [...pathParams, ...queryParams],
       requestBody,
       responses: [],
-      auth: null,
+      auth,
       middleware: [],
       description: handlerDescription,
       source,
@@ -577,7 +681,7 @@ function parsePagesRouterFile(
         params: [...pathParams, ...queryParams],
         requestBody: methodBody,
         responses: [],
-        auth: null,
+        auth,
         middleware: [],
         description: handlerDescription,
         source,
