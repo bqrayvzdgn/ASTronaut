@@ -43,6 +43,13 @@ function mapType(type: string): string {
   return TYPE_MAP[type.toLowerCase()] ?? "string";
 }
 
+/**
+ * Strip ASP.NET route constraints from path: {id:guid} → {id}
+ */
+function stripRouteConstraints(path: string): string {
+  return path.replace(/\{(\w+):[^}]+\}/g, "{$1}");
+}
+
 function buildOperationId(
   controller: string | null,
   method: string,
@@ -52,7 +59,8 @@ function buildOperationId(
     ? controller.replace(/Controller$/i, "")
     : "default";
 
-  const pathPart = path
+  const cleanPath = stripRouteConstraints(path);
+  const pathPart = cleanPath
     .split("/")
     .filter((seg) => seg.length > 0)
     .map((seg) => {
@@ -121,6 +129,31 @@ function addRequestBodySchema(
   }
 
   const rb = route.requestBody;
+  const contentType = rb.contentType || "application/json";
+
+  // multipart/form-data (file upload)
+  if (contentType === "multipart/form-data") {
+    const formProps: Record<string, unknown> = {};
+    for (const prop of rb.properties) {
+      formProps[prop.name] =
+        prop.type === "binary"
+          ? { type: "string", format: "binary" }
+          : { type: mapType(prop.type) };
+    }
+
+    return {
+      required: true,
+      content: {
+        "multipart/form-data": {
+          schema: {
+            type: "object",
+            properties: formProps,
+          },
+        },
+      },
+    };
+  }
+
   const name = schemaName(route.controller, rb.type);
 
   if (!spec.components.schemas[name]) {
@@ -275,7 +308,7 @@ export function generateOpenApiSpec(
   };
 
   for (const route of parseResult.routes) {
-    const pathKey = route.path;
+    const pathKey = stripRouteConstraints(route.path);
     const methodKey = route.method.toLowerCase();
 
     if (!spec.paths[pathKey]) {

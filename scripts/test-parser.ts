@@ -33,6 +33,11 @@ async function main() {
       parseResult = parseNestRoutes(repoPath);
       break;
     }
+    case "nextjs": {
+      const { parseNextRoutes } = await import("../src/parser/nextParser");
+      parseResult = await parseNextRoutes(repoPath);
+      break;
+    }
     case "aspnet-controller":
     case "aspnet-minimal":
     case "aspnet-both": {

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -67,6 +68,9 @@ public class MinimalApiParser
             if (!routePath.StartsWith("/"))
                 routePath = "/" + routePath;
 
+            // Strip route constraints: {id:guid} → {id}
+            routePath = Regex.Replace(routePath, @"\{(\w+):[^}]+\}", "{$1}");
+
             var route = new RouteInfo
             {
                 Path = routePath,
@@ -112,6 +116,12 @@ public class MinimalApiParser
         }
     }
 
+    private static readonly HashSet<string> FormFileTypes = new()
+    {
+        "IFormFile", "IFormFileCollection", "IFormFile?",
+        "List<IFormFile>", "IList<IFormFile>", "IEnumerable<IFormFile>",
+    };
+
     private void ExtractLambdaParams(ParameterListSyntax parameterList, RouteInfo route)
     {
         foreach (var param in parameterList.Parameters)
@@ -124,10 +134,25 @@ public class MinimalApiParser
             if (source == "service")
                 continue;
 
+            // IFormFile → multipart/form-data
+            if (FormFileTypes.Contains(paramType))
+            {
+                route.RequestBody = new RequestBodyInfo
+                {
+                    Type = paramType,
+                    ContentType = "multipart/form-data",
+                    Properties = new List<Models.PropertyInfo>
+                    {
+                        new() { Name = paramName, Type = "binary", Required = true },
+                    },
+                };
+                continue;
+            }
+
             if (source == "body")
             {
                 _visitedTypes.Clear();
-                var properties = ResolveTypeProperties(paramType);
+                var properties = ResolveTypePropertiesFromSyntax(param.Type);
                 route.RequestBody = new RequestBodyInfo
                 {
                     Type = paramType,
@@ -144,6 +169,33 @@ public class MinimalApiParser
                 Required = param.Default == null && !paramType.EndsWith("?"),
             });
         }
+    }
+
+    private List<Models.PropertyInfo> ResolveTypePropertiesFromSyntax(TypeSyntax? typeSyntax)
+    {
+        if (typeSyntax == null)
+            return new List<Models.PropertyInfo>();
+
+        var typeName = typeSyntax.ToString();
+        if (IsPrimitiveType(typeName))
+            return new List<Models.PropertyInfo>();
+
+        // Try direct semantic resolution from syntax node (resolves cross-project types)
+        if (_semanticModel != null)
+        {
+            var typeInfo = _semanticModel.GetTypeInfo(typeSyntax);
+            if (typeInfo.Type is INamedTypeSymbol namedType
+                && namedType.TypeKind != TypeKind.Error
+                && !_visitedTypes.Contains(typeName))
+            {
+                _visitedTypes.Add(typeName);
+                var props = ExtractPropertiesFromSymbol(namedType);
+                if (props.Count > 0)
+                    return props;
+            }
+        }
+
+        return ResolveTypeProperties(typeName);
     }
 
     private void ExtractSimpleLambdaParam(ParameterSyntax param, RouteInfo route)
@@ -481,15 +533,21 @@ public class MinimalApiParser
 
     private List<Models.PropertyInfo> ResolveViaSemanticModel(string typeName)
     {
-        var properties = new List<Models.PropertyInfo>();
         var compilation = _semanticModel!.Compilation;
-
         var typeSymbol = compilation.GetTypeByMetadataName(typeName);
+
         if (typeSymbol == null)
             typeSymbol = FindTypeByShortName(compilation, typeName);
 
         if (typeSymbol == null)
-            return properties;
+            return new List<Models.PropertyInfo>();
+
+        return ExtractPropertiesFromSymbol(typeSymbol);
+    }
+
+    private static List<Models.PropertyInfo> ExtractPropertiesFromSymbol(INamedTypeSymbol typeSymbol)
+    {
+        var properties = new List<Models.PropertyInfo>();
 
         foreach (var member in typeSymbol.GetMembers())
         {
@@ -505,11 +563,15 @@ public class MinimalApiParser
             var propType = propSymbol.Type;
             var isNullable = propType.NullableAnnotation == NullableAnnotation.Annotated;
 
+            var hasRequiredAttr = propSymbol.GetAttributes()
+                .Any(a => a.AttributeClass?.Name is "RequiredAttribute" or "Required");
+            var isRequired = propSymbol.IsRequired || hasRequiredAttr;
+
             properties.Add(new Models.PropertyInfo
             {
                 Name = ToCamelCase(propSymbol.Name),
                 Type = MapRoslynTypeToJsonType(propType),
-                Required = !isNullable && propType.IsValueType,
+                Required = isRequired || (!isNullable && propType.IsValueType),
             });
         }
 
