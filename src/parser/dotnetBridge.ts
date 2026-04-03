@@ -22,6 +22,7 @@ interface DotnetRouteInfo {
   }>;
   requestBody: {
     type: string;
+    contentType?: string;
     properties: Array<{
       name: string;
       type: string;
@@ -161,6 +162,7 @@ export async function parseDotnet(repoPath: string): Promise<ParseResult> {
       requestBody: r.requestBody
         ? {
             type: r.requestBody.type,
+            contentType: r.requestBody.contentType,
             properties: r.requestBody.properties.map(
               (prop): PropertyInfo => ({
                 name: prop.name,

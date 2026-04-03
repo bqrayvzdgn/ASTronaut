@@ -154,6 +154,10 @@ async function parseByFramework(
       const { parseNestRoutes } = await import("../parser/nestParser");
       return parseNestRoutes(repoPath);
     }
+    case Framework.NEXTJS: {
+      const { parseNextRoutes } = await import("../parser/nextParser");
+      return parseNextRoutes(repoPath);
+    }
     case Framework.ASPNET_CONTROLLER:
     case Framework.ASPNET_MINIMAL:
     case Framework.ASPNET_BOTH: {

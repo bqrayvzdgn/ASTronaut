@@ -35,6 +35,7 @@ export interface ParamInfo {
 
 export interface RequestBodyInfo {
   type: string;
+  contentType?: string;
   properties: PropertyInfo[];
 }
 

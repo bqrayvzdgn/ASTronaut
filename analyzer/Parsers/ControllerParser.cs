@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -185,9 +186,17 @@ public class ControllerParser
 
         var path = "/" + string.Join("/", parts);
 
-        // Convert ASP.NET route params {id} to OpenAPI style
+        // Strip route constraints: {id:guid} → {id}, {slug:regex(...)} → {slug}
+        path = Regex.Replace(path, @"\{(\w+):[^}]+\}", "{$1}");
+
         return path;
     }
+
+    private static readonly HashSet<string> FormFileTypes = new()
+    {
+        "IFormFile", "IFormFileCollection", "IFormFile?",
+        "List<IFormFile>", "IList<IFormFile>", "IEnumerable<IFormFile>",
+    };
 
     private void ExtractParameters(MethodDeclarationSyntax method, RouteInfo route)
     {
@@ -196,6 +205,21 @@ public class ControllerParser
             var paramName = param.Identifier.Text;
             var paramType = param.Type?.ToString() ?? "string";
             var source = DetermineParamSource(param, route.Path);
+
+            // IFormFile → multipart/form-data
+            if (FormFileTypes.Contains(paramType))
+            {
+                route.RequestBody = new RequestBodyInfo
+                {
+                    Type = paramType,
+                    ContentType = "multipart/form-data",
+                    Properties = new List<Models.PropertyInfo>
+                    {
+                        new() { Name = paramName, Type = "binary", Required = true },
+                    },
+                };
+                continue;
+            }
 
             if (source == "body")
             {
@@ -257,6 +281,20 @@ public class ControllerParser
         };
     }
 
+    private static readonly Dictionary<string, int> ResultMethodStatusCodes = new()
+    {
+        { "Ok", 200 },
+        { "Created", 201 },
+        { "CreatedAtAction", 201 },
+        { "CreatedAtRoute", 201 },
+        { "NoContent", 204 },
+        { "BadRequest", 400 },
+        { "Unauthorized", 401 },
+        { "Forbid", 403 },
+        { "NotFound", 404 },
+        { "Conflict", 409 },
+    };
+
     private void ExtractResponseType(MethodDeclarationSyntax method, RouteInfo route)
     {
         var returnType = method.ReturnType.ToString();
@@ -269,7 +307,38 @@ public class ControllerParser
         if (innerType == returnType)
             innerType = UnwrapGenericType(returnType, "IActionResult");
 
-        if (innerType == "void" || innerType == "IActionResult" || innerType == "ActionResult")
+        if (innerType != "void" && innerType != "IActionResult" && innerType != "ActionResult")
+        {
+            _visitedTypes.Clear();
+            var properties = ResolveTypeProperties(innerType);
+
+            route.Responses.Add(new ResponseInfo
+            {
+                Status = route.Method == "POST" ? 201 : 200,
+                Type = innerType,
+                Properties = properties,
+            });
+            return;
+        }
+
+        // For IActionResult/ActionResult, try to infer from return statements
+        var returnStatements = method.DescendantNodes().OfType<ReturnStatementSyntax>();
+        var seenStatuses = new HashSet<int>();
+
+        foreach (var ret in returnStatements)
+        {
+            if (ret.Expression is InvocationExpressionSyntax invocation)
+            {
+                var responseInfo = ExtractControllerResultInfo(invocation);
+                if (responseInfo != null && seenStatuses.Add(responseInfo.Status))
+                {
+                    route.Responses.Add(responseInfo);
+                }
+            }
+        }
+
+        // Fallback if no return statements found
+        if (route.Responses.Count == 0)
         {
             route.Responses.Add(new ResponseInfo
             {
@@ -277,18 +346,67 @@ public class ControllerParser
                 Type = null,
                 Properties = new List<Models.PropertyInfo>(),
             });
-            return;
+        }
+    }
+
+    private ResponseInfo? ExtractControllerResultInfo(InvocationExpressionSyntax invocation)
+    {
+        string methodName;
+
+        if (invocation.Expression is IdentifierNameSyntax identifier)
+        {
+            // Ok(...), NotFound(...), etc.
+            methodName = identifier.Identifier.Text;
+        }
+        else if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
+        {
+            // this.Ok(...), StatusCode(...)
+            methodName = memberAccess.Name.Identifier.Text;
+        }
+        else
+        {
+            return null;
         }
 
-        _visitedTypes.Clear();
-        var properties = ResolveTypeProperties(innerType);
+        if (!ResultMethodStatusCodes.TryGetValue(methodName, out var status))
+            return null;
 
-        route.Responses.Add(new ResponseInfo
+        // Try to resolve type from the first argument
+        string? typeName = null;
+        var properties = new List<Models.PropertyInfo>();
+
+        if (invocation.ArgumentList.Arguments.Count > 0)
         {
-            Status = route.Method == "POST" ? 201 : 200,
-            Type = innerType,
+            var firstArg = invocation.ArgumentList.Arguments[0].Expression;
+
+            // Try semantic model to get the type of the argument
+            if (_semanticModel != null)
+            {
+                var typeInfo = _semanticModel.GetTypeInfo(firstArg);
+                var argType = typeInfo.Type;
+
+                if (argType != null && argType.SpecialType == SpecialType.None
+                    && argType.TypeKind != TypeKind.Error
+                    && argType.Name != "Object")
+                {
+                    typeName = argType.Name;
+                    _visitedTypes.Clear();
+
+                    // Use type symbol directly for cross-project resolution
+                    if (argType is INamedTypeSymbol namedArgType)
+                        properties = ExtractPropertiesFromSymbol(namedArgType);
+                    else
+                        properties = ResolveTypeProperties(typeName);
+                }
+            }
+        }
+
+        return new ResponseInfo
+        {
+            Status = status,
+            Type = typeName,
             Properties = properties,
-        });
+        };
     }
 
     private static string UnwrapGenericType(string typeName, string wrapperName)
@@ -306,7 +424,26 @@ public class ControllerParser
         if (typeSyntax == null)
             return new List<Models.PropertyInfo>();
 
-        return ResolveTypeProperties(typeSyntax.ToString());
+        var typeName = typeSyntax.ToString();
+        if (IsPrimitiveType(typeName))
+            return new List<Models.PropertyInfo>();
+
+        // Try direct semantic resolution from syntax node (resolves cross-project types)
+        if (_semanticModel != null)
+        {
+            var typeInfo = _semanticModel.GetTypeInfo(typeSyntax);
+            if (typeInfo.Type is INamedTypeSymbol namedType
+                && namedType.TypeKind != TypeKind.Error
+                && !_visitedTypes.Contains(typeName))
+            {
+                _visitedTypes.Add(typeName);
+                var props = ExtractPropertiesFromSymbol(namedType);
+                if (props.Count > 0)
+                    return props;
+            }
+        }
+
+        return ResolveTypeProperties(typeName);
     }
 
     private List<Models.PropertyInfo> ResolveTypeProperties(string typeName)
@@ -340,19 +477,22 @@ public class ControllerParser
 
     private List<Models.PropertyInfo> ResolveViaSemanticModel(string typeName)
     {
-        var properties = new List<Models.PropertyInfo>();
-
         var compilation = _semanticModel!.Compilation;
         var typeSymbol = compilation.GetTypeByMetadataName(typeName);
 
-        // If not found by full name, search all types
+        // If not found by full name, search all types in source
         if (typeSymbol == null)
-        {
             typeSymbol = FindTypeByShortName(compilation, typeName);
-        }
 
         if (typeSymbol == null)
-            return properties;
+            return new List<Models.PropertyInfo>();
+
+        return ExtractPropertiesFromSymbol(typeSymbol);
+    }
+
+    private static List<Models.PropertyInfo> ExtractPropertiesFromSymbol(INamedTypeSymbol typeSymbol)
+    {
+        var properties = new List<Models.PropertyInfo>();
 
         foreach (var member in typeSymbol.GetMembers())
         {
@@ -368,11 +508,16 @@ public class ControllerParser
             var propType = propSymbol.Type;
             var isNullable = propType.NullableAnnotation == NullableAnnotation.Annotated;
 
+            // Check [Required] attribute or C# required keyword
+            var hasRequiredAttr = propSymbol.GetAttributes()
+                .Any(a => a.AttributeClass?.Name is "RequiredAttribute" or "Required");
+            var isRequired = propSymbol.IsRequired || hasRequiredAttr;
+
             properties.Add(new Models.PropertyInfo
             {
                 Name = ToCamelCase(propSymbol.Name),
                 Type = MapRoslynTypeToJsonType(propType),
-                Required = !isNullable && propType.IsValueType,
+                Required = isRequired || (!isNullable && propType.IsValueType),
             });
         }
 

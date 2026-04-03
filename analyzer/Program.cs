@@ -163,11 +163,27 @@ public static class Program
             }
         };
 
+        // Track already-loaded project paths to avoid "already part of workspace" errors.
+        // When MSBuild opens a project, it automatically loads referenced projects too.
+        var loadedProjectPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var csprojPath in csprojFiles)
         {
+            // Skip if this project was already loaded as a dependency of another project
+            if (loadedProjectPaths.Contains(Path.GetFullPath(csprojPath)))
+                continue;
+
             try
             {
                 var project = await workspace.OpenProjectAsync(csprojPath);
+
+                // Record all projects now in the workspace (includes transitive references)
+                foreach (var p in workspace.CurrentSolution.Projects)
+                {
+                    if (!string.IsNullOrEmpty(p.FilePath))
+                        loadedProjectPaths.Add(Path.GetFullPath(p.FilePath));
+                }
+
                 var compilation = await project.GetCompilationAsync();
 
                 if (compilation == null)

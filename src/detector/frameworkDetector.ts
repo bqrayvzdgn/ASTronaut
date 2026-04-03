@@ -6,6 +6,7 @@ import { logger } from "../utils/logger";
 export enum Framework {
   EXPRESS = "express",
   NESTJS = "nestjs",
+  NEXTJS = "nextjs",
   ASPNET_CONTROLLER = "aspnet-controller",
   ASPNET_MINIMAL = "aspnet-minimal",
   ASPNET_BOTH = "aspnet-both",
@@ -25,6 +26,7 @@ export async function detectFramework(
     const mapping: Record<string, Framework> = {
       express: Framework.EXPRESS,
       nestjs: Framework.NESTJS,
+      nextjs: Framework.NEXTJS,
       aspnet: Framework.ASPNET_CONTROLLER,
       "aspnet-controller": Framework.ASPNET_CONTROLLER,
       "aspnet-minimal": Framework.ASPNET_MINIMAL,
@@ -49,6 +51,10 @@ export async function detectFramework(
       if (allDeps["@nestjs/core"]) {
         logger.info("Detected NestJS framework");
         return Framework.NESTJS;
+      }
+      if (allDeps["next"]) {
+        logger.info("Detected Next.js framework");
+        return Framework.NEXTJS;
       }
       if (allDeps["express"]) {
         logger.info("Detected Express framework");

@@ -67,6 +67,9 @@ public class RequestBodyInfo
     [JsonPropertyName("type")]
     public string Type { get; set; } = string.Empty;
 
+    [JsonPropertyName("contentType")]
+    public string? ContentType { get; set; }
+
     [JsonPropertyName("properties")]
     public List<PropertyInfo> Properties { get; set; } = new();
 }
