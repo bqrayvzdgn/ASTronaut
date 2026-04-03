@@ -1,10 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node -e \"const t = require\\('@babel/traverse'\\); console.log\\('traverse type:', typeof t, 'default type:', typeof t.default\\)\")",
-      "Bash(npx tsc:*)",
-      "Bash(node -e \"const p = require\\('@babel/parser'\\); console.log\\(typeof p.parse\\)\")",
-      "Bash(npx jest:*)"
+      "Read",
+      "Glob",
+      "Grep",
+      "Bash(git *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(dotnet *)",
+      "Bash(gh repo:*)",
+      "Bash(gh project:*)",
+      "Bash(gh issue:*)"
     ]
   }
 }
