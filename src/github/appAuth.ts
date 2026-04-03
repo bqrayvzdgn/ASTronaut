@@ -30,7 +30,7 @@ function createAppJwt(): string {
   const now = Math.floor(Date.now() / 1000);
   const payload = {
     iat: now - 60, // issued 60s in the past to account for clock drift
-    exp: now + 10 * 60, // 10 minute maximum
+    exp: now + 9 * 60, // 9 min from now; total window = 10 min with 60s IAT backdate
     iss: config.github.appId,
   };
   return jwt.sign(payload, getPrivateKey(), { algorithm: "RS256" });
