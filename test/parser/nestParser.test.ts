@@ -687,6 +687,151 @@ describe("NestJS Parser", () => {
     expect(methods).toEqual(["DELETE", "GET", "PATCH", "POST", "PUT"]);
   });
 
+  test("@HttpCode decorator overrides default status code", () => {
+    tmpDir = createTempProject({
+      "src/users.controller.ts": `
+        function Controller(prefix?: string): ClassDecorator { return () => {}; }
+        function Post(path?: string): MethodDecorator { return () => {}; }
+        function HttpCode(code: number): MethodDecorator { return () => {}; }
+        function Body(): ParameterDecorator { return () => {}; }
+
+        @Controller('users')
+        export class UsersController {
+          @Post()
+          @HttpCode(201)
+          create(@Body() data: any): void {}
+        }
+      `,
+    });
+
+    const result = parseNestRoutes(tmpDir);
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.routes).toHaveLength(1);
+
+    const route = result.routes[0];
+    expect(route.method).toBe("POST");
+    expect(route.responses).toHaveLength(1);
+    expect(route.responses[0].status).toBe(201);
+  });
+
+  test("@ApiResponse decorator with status and type", () => {
+    tmpDir = createTempProject({
+      "src/dto/create-user.dto.ts": `
+        export class CreateUserDto {
+          name: string;
+          email: string;
+        }
+      `,
+      "src/users.controller.ts": `
+        import { CreateUserDto } from './dto/create-user.dto';
+
+        function Controller(prefix?: string): ClassDecorator { return () => {}; }
+        function Post(path?: string): MethodDecorator { return () => {}; }
+        function ApiResponse(options: any): MethodDecorator { return () => {}; }
+
+        @Controller('users')
+        export class UsersController {
+          @Post()
+          @ApiResponse({ status: 201, type: CreateUserDto })
+          create(): void {}
+        }
+      `,
+    });
+
+    const result = parseNestRoutes(tmpDir);
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.routes).toHaveLength(1);
+
+    const route = result.routes[0];
+    expect(route.responses).toHaveLength(1);
+    expect(route.responses[0].status).toBe(201);
+    expect(route.responses[0].type).toBe("CreateUserDto");
+    expect(route.responses[0].properties.length).toBeGreaterThanOrEqual(2);
+
+    const nameProp = route.responses[0].properties.find((p) => p.name === "name");
+    expect(nameProp).toBeDefined();
+    expect(nameProp!.type).toBe("string");
+  });
+
+  test("@ApiOkResponse decorator with type", () => {
+    tmpDir = createTempProject({
+      "src/dto/user.dto.ts": `
+        export class UserDto {
+          id: number;
+          name: string;
+          email: string;
+        }
+      `,
+      "src/users.controller.ts": `
+        import { UserDto } from './dto/user.dto';
+
+        function Controller(prefix?: string): ClassDecorator { return () => {}; }
+        function Get(path?: string): MethodDecorator { return () => {}; }
+        function ApiOkResponse(options: any): MethodDecorator { return () => {}; }
+
+        @Controller('users')
+        export class UsersController {
+          @Get()
+          @ApiOkResponse({ type: UserDto })
+          findAll(): void {}
+        }
+      `,
+    });
+
+    const result = parseNestRoutes(tmpDir);
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.routes).toHaveLength(1);
+
+    const route = result.routes[0];
+    expect(route.responses).toHaveLength(1);
+    expect(route.responses[0].status).toBe(200);
+    expect(route.responses[0].type).toBe("UserDto");
+    expect(route.responses[0].properties.length).toBeGreaterThanOrEqual(3);
+
+    const idProp = route.responses[0].properties.find((p) => p.name === "id");
+    expect(idProp).toBeDefined();
+    expect(idProp!.type).toBe("number");
+  });
+
+  test("No response decorators falls back to return type with status 200", () => {
+    tmpDir = createTempProject({
+      "src/dto/item.dto.ts": `
+        export class ItemDto {
+          id: number;
+          title: string;
+        }
+      `,
+      "src/items.controller.ts": `
+        import { ItemDto } from './dto/item.dto';
+
+        function Controller(prefix?: string): ClassDecorator { return () => {}; }
+        function Get(path?: string): MethodDecorator { return () => {}; }
+
+        @Controller('items')
+        export class ItemsController {
+          @Get()
+          async findAll(): Promise<ItemDto> {
+            return null as any;
+          }
+        }
+      `,
+    });
+
+    const result = parseNestRoutes(tmpDir);
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.routes).toHaveLength(1);
+
+    const route = result.routes[0];
+    expect(route.responses).toHaveLength(1);
+    expect(route.responses[0].status).toBe(200);
+    expect(route.responses[0].type).toBe("ItemDto");
+    expect(route.responses[0].properties.length).toBeGreaterThanOrEqual(2);
+  });
+
   test("No controllers found returns empty routes", () => {
     tmpDir = createTempProject({
       "src/service.ts": `

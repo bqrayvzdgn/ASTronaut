@@ -226,7 +226,114 @@ function extractRequestBody(method: MethodDeclaration): RequestBodyInfo | null {
   return null;
 }
 
+function extractHttpCode(method: MethodDeclaration): number {
+  const decorator = method.getDecorator("HttpCode");
+  if (decorator) {
+    const args = decorator.getArguments();
+    if (args.length > 0) {
+      const code = parseInt(args[0].getText(), 10);
+      if (!isNaN(code)) return code;
+    }
+  }
+  return 200;
+}
+
+function extractDecoratorTypeArg(
+  decorator: Decorator,
+  visited: Set<string>
+): { typeName: string; properties: PropertyInfo[] } | null {
+  const args = decorator.getArguments();
+  if (args.length === 0) return null;
+
+  const argText = args[0].getText();
+  const typeMatch = argText.match(/type\s*:\s*(\w+)/);
+  if (!typeMatch) return null;
+
+  const typeName = typeMatch[1];
+  const sourceFile = decorator.getSourceFile();
+
+  // Try local declarations first
+  const localDecl = sourceFile.getTypeAlias(typeName) || sourceFile.getInterface(typeName) || sourceFile.getClass(typeName);
+  if (localDecl) {
+    const type = localDecl.getType();
+    const properties = resolveTypeProperties(type, new Set(visited));
+    return { typeName, properties };
+  }
+
+  // Try resolving through imports across the project
+  const project = sourceFile.getProject();
+  for (const sf of project.getSourceFiles()) {
+    const decl = sf.getTypeAlias(typeName) || sf.getInterface(typeName) || sf.getClass(typeName);
+    if (decl) {
+      const type = decl.getType();
+      const properties = resolveTypeProperties(type, new Set(visited));
+      return { typeName, properties };
+    }
+  }
+
+  return { typeName, properties: [] };
+}
+
+function extractApiResponses(method: MethodDeclaration, visited: Set<string>): ResponseInfo[] | null {
+  const DECORATOR_STATUS_MAP: Record<string, number> = {
+    ApiOkResponse: 200,
+    ApiCreatedResponse: 201,
+    ApiAcceptedResponse: 202,
+    ApiNoContentResponse: 204,
+    ApiBadRequestResponse: 400,
+    ApiUnauthorizedResponse: 401,
+    ApiForbiddenResponse: 403,
+    ApiNotFoundResponse: 404,
+    ApiConflictResponse: 409,
+    ApiInternalServerErrorResponse: 500,
+  };
+
+  const decorators = method.getDecorators();
+  const responses: ResponseInfo[] = [];
+
+  for (const dec of decorators) {
+    const name = dec.getName();
+
+    // Named response decorators (e.g., @ApiOkResponse({ type: UserDto }))
+    if (DECORATOR_STATUS_MAP[name] !== undefined) {
+      const status = DECORATOR_STATUS_MAP[name];
+      const typeInfo = extractDecoratorTypeArg(dec, visited);
+      responses.push({
+        status,
+        type: typeInfo?.typeName ?? null,
+        properties: typeInfo?.properties ?? [],
+      });
+      continue;
+    }
+
+    // Generic @ApiResponse({ status: 200, type: UserDto })
+    if (name === "ApiResponse") {
+      const args = dec.getArguments();
+      if (args.length > 0) {
+        const argText = args[0].getText();
+        const statusMatch = argText.match(/status\s*:\s*(\d+)/);
+        const status = statusMatch ? parseInt(statusMatch[1], 10) : 200;
+        const typeInfo = extractDecoratorTypeArg(dec, visited);
+        responses.push({
+          status,
+          type: typeInfo?.typeName ?? null,
+          properties: typeInfo?.properties ?? [],
+        });
+      }
+    }
+  }
+
+  return responses.length > 0 ? responses : null;
+}
+
 function extractResponses(method: MethodDeclaration): ResponseInfo[] {
+  // 1. Check for Swagger/OpenAPI decorators first
+  const apiResponses = extractApiResponses(method, new Set<string>());
+  if (apiResponses) return apiResponses;
+
+  // 2. Fall back to return type analysis with @HttpCode support
+  const statusCode = extractHttpCode(method);
+
   const returnType = method.getReturnType();
   let resolvedType = returnType;
   let typeName = simplifyTypeName(returnType.getText());
@@ -241,14 +348,14 @@ function extractResponses(method: MethodDeclaration): ResponseInfo[] {
   }
 
   if (typeName === "void" || typeName === "undefined") {
-    return [{ status: 200, type: null, properties: [] }];
+    return [{ status: statusCode, type: null, properties: [] }];
   }
 
   const properties = resolveTypeProperties(resolvedType, new Set<string>());
 
   return [
     {
-      status: 200,
+      status: statusCode,
       type: typeName,
       properties,
     },
