@@ -14,8 +14,9 @@ export function checkRateLimit(repoFullName: string): boolean {
 
   let record = store.get(repoFullName);
   if (!record) {
-    record = { timestamps: [] };
+    record = { timestamps: [now] };
     store.set(repoFullName, record);
+    return true;
   }
 
   // Sliding window: remove timestamps older than 1 hour
@@ -24,6 +25,8 @@ export function checkRateLimit(repoFullName: string): boolean {
   // Evict empty entries to prevent memory leak over time
   if (record.timestamps.length === 0) {
     store.delete(repoFullName);
+    record = { timestamps: [now] };
+    store.set(repoFullName, record);
     return true;
   }
 
