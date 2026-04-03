@@ -10,7 +10,7 @@ import { loadAutodocConfig } from "../config/autodocConfig";
 import { detectFramework, Framework } from "../detector/frameworkDetector";
 import { generateOpenApiSpec } from "../generator/openApiGenerator";
 import { db } from "../db/connection";
-import { analyses, repos, webhookEvents } from "../db/schema";
+import { analyses, installations, repos, webhookEvents } from "../db/schema";
 import type { ParseResult } from "../parser/types";
 
 async function updateWebhookStatus(
@@ -37,10 +37,20 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
   const payload = item.payload as any;
   const webhookEventId = item.webhookEventId;
 
-  const owner: string = payload.repository.owner.login;
-  const repo: string = payload.repository.name;
-  const installationId: number = payload.installation.id;
-  const commitSha: string = payload.workflow_run.head_sha;
+  const owner: string | undefined = payload?.repository?.owner?.login;
+  const repo: string | undefined = payload?.repository?.name;
+  const installationId: number | undefined = payload?.installation?.id;
+  const commitSha: string | undefined = payload?.workflow_run?.head_sha;
+
+  if (!owner || !repo || !installationId || !commitSha) {
+    const log = createChildLogger({ owner, repo, commitSha });
+    log.error(
+      { payloadKeys: Object.keys(payload ?? {}) },
+      "Malformed webhook payload: missing required fields"
+    );
+    await updateWebhookStatus(webhookEventId, "error", "Malformed payload");
+    return;
+  }
 
   const log = createChildLogger({ owner, repo, commitSha });
   const startTime = Date.now();
@@ -70,6 +80,7 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
     await saveAnalysis({
       owner,
       repo,
+      installationId,
       commitSha,
       status: "failed",
       errors: [{ reason: `permission_denied: ${reason}` }],
@@ -127,6 +138,7 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
     await saveAnalysis({
       owner,
       repo,
+      installationId,
       commitSha,
       tag: version,
       spec,
@@ -151,6 +163,7 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
     await saveAnalysis({
       owner,
       repo,
+      installationId,
       commitSha,
       status: "failed",
       errors: [{ reason: err instanceof Error ? err.message : String(err) }],
@@ -228,6 +241,7 @@ async function resolveVersion(
 interface SaveAnalysisParams {
   owner: string;
   repo: string;
+  installationId?: number;
   commitSha: string;
   tag?: string;
   spec?: string;
@@ -242,16 +256,40 @@ interface SaveAnalysisParams {
 async function saveAnalysis(params: SaveAnalysisParams): Promise<void> {
   try {
     // Look up repo ID from the repos table
-    const [repoRow] = await db
+    let [repoRow] = await db
       .select({ id: repos.id })
       .from(repos)
       .where(eq(repos.repoFullName, `${params.owner}/${params.repo}`))
       .limit(1);
 
     if (!repoRow) {
-      // If we don't have the repo registered yet, we can't save the analysis
-      // This is a soft failure — the PR was still created
-      return;
+      // Repo not registered yet — try to create it if we know the installation
+      if (params.installationId) {
+        const [instRow] = await db
+          .select({ id: installations.id })
+          .from(installations)
+          .where(eq(installations.githubInstallationId, params.installationId))
+          .limit(1);
+
+        if (instRow) {
+          const [newRepo] = await db
+            .insert(repos)
+            .values({
+              installationId: instRow.id,
+              repoName: params.repo,
+              repoFullName: `${params.owner}/${params.repo}`,
+              isActive: "true",
+            })
+            .returning({ id: repos.id });
+
+          repoRow = newRepo;
+        }
+      }
+
+      if (!repoRow) {
+        // Truly no installation or repo — soft failure, PR was still created
+        return;
+      }
     }
 
     await db.insert(analyses).values({

@@ -109,14 +109,29 @@ export async function getValidToken(installationId: number): Promise<string> {
     })
     .where(eq(installations.githubInstallationId, installationId));
 
-  // If no row was updated the installation may not exist in our DB yet.
-  // In that case, we still return the token but log a warning so the
-  // webhook handler can create the installation row when appropriate.
+  // If no row was updated, the installation may not exist in our DB yet.
+  // Use upsert as a safety net to create/update the row.
   if (!updateResult.rowCount || updateResult.rowCount === 0) {
     log.warn(
       { installationId },
-      "No installation row found in DB to cache token; token returned but not persisted"
+      "No installation row found; upserting token cache"
     );
+    await db
+      .insert(installations)
+      .values({
+        githubInstallationId: installationId,
+        owner: "unknown",
+        accessToken: newToken,
+        tokenExpiresAt: newExpiresAt,
+      })
+      .onConflictDoUpdate({
+        target: installations.githubInstallationId,
+        set: {
+          accessToken: newToken,
+          tokenExpiresAt: newExpiresAt,
+          updatedAt: new Date(),
+        },
+      });
   } else {
     log.info(
       { installationId, expiresAt: newExpiresAt.toISOString() },
