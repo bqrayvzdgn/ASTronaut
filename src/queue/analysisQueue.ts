@@ -6,6 +6,7 @@ export interface QueueItem {
   repoFullName: string;
   payload: unknown;
   addedAt: number;
+  webhookEventId?: number;
 }
 
 type ProcessFn = (item: QueueItem) => Promise<void>;
