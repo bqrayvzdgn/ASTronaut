@@ -343,7 +343,7 @@ function parseAppRouterFile(
         for (const declarator of decl.declarations) {
           if (declarator.id?.type !== "Identifier") continue;
           const method = declarator.id.name.toUpperCase();
-          if (!HTTP_METHODS.has(method)) return;
+          if (!HTTP_METHODS.has(method)) continue;
 
           const init = declarator.init;
           if (!init) continue;
