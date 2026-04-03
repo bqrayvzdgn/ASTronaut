@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 
 import { QueueItem } from "../queue/analysisQueue";
 import { createChildLogger } from "../utils/logger";
+import { config } from "../config";
 import { getValidToken } from "../github/appAuth";
 import { checkRepoPermissions, createPR } from "../github/prService";
 import { cloneRepo, removeSensitiveFiles, cleanup } from "../github/repoManager";
@@ -12,6 +13,19 @@ import { generateOpenApiSpec } from "../generator/openApiGenerator";
 import { db } from "../db/connection";
 import { analyses, installations, repos, webhookEvents } from "../db/schema";
 import type { ParseResult } from "../parser/types";
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms
+    );
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() =>
+    clearTimeout(timeoutId)
+  );
+}
 
 async function updateWebhookStatus(
   webhookEventId: number | undefined,
@@ -102,8 +116,12 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
     const framework = await detectFramework(repoPath, autodocConfig);
     log.info({ framework }, "Framework detected");
 
-    // Parse based on framework
-    const parseResult = await parseByFramework(framework, repoPath);
+    // Parse based on framework (with timeout)
+    const parseResult = await withTimeout(
+      parseByFramework(framework, repoPath),
+      config.timeouts.parseMs,
+      "parseByFramework"
+    );
     log.info(
       { routeCount: parseResult.routes.length, errorCount: parseResult.errors.length },
       "Parsing complete"
@@ -128,6 +146,7 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
       spec,
       parseResult,
       commitSha,
+      version,
       docsOutput,
     });
 

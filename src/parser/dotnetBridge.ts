@@ -6,7 +6,7 @@ import { ParseResult, RouteInfo, ParamInfo, RequestBodyInfo, ResponseInfo, Prope
 
 const execFileAsync = promisify(execFile);
 
-const DOTNET_TIMEOUT_MS = 120_000;
+const DOTNET_TIMEOUT_MS = config.timeouts?.parseMs ?? 60_000;
 const MAX_BUFFER_BYTES = 10 * 1024 * 1024; // 10 MB
 
 interface DotnetRouteInfo {

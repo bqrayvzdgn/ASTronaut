@@ -498,6 +498,12 @@ export function parseExpressSource(
 // ---------------------------------------------------------------------------
 // Core file-level parser
 // ---------------------------------------------------------------------------
+// TODO(#14): Cross-file router tracking. Currently each file is parsed
+// independently. When a file does `const userRouter = require('./routes/users')`
+// and then `app.use('/api/users', userRouter)`, the prefix is detected but
+// routes defined in the external file are not linked. Full implementation
+// requires: 1) build a map of module exports across all files, 2) resolve
+// require()/import references, 3) compose the full route tree with prefixes.
 
 function parseFile(
   code: string,
