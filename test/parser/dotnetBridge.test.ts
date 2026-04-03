@@ -410,7 +410,7 @@ describe("parseDotnet", () => {
         "/my/repo/path",
       ]);
       expect(callArgs[2]).toMatchObject({
-        timeout: 120000,
+        timeout: 60000, // config.timeouts.parseMs default
         maxBuffer: 10 * 1024 * 1024,
       });
     });

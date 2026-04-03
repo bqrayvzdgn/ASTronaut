@@ -21,6 +21,12 @@ export function checkRateLimit(repoFullName: string): boolean {
   // Sliding window: remove timestamps older than 1 hour
   record.timestamps = record.timestamps.filter((ts) => now - ts < windowMs);
 
+  // Evict empty entries to prevent memory leak over time
+  if (record.timestamps.length === 0) {
+    store.delete(repoFullName);
+    return true;
+  }
+
   if (record.timestamps.length >= maxRequests) {
     return false;
   }

@@ -20,6 +20,7 @@ export interface CreatePRParams {
   spec: string;
   parseResult: ParseResult;
   commitSha: string;
+  version: string;
   docsOutput?: string;
 }
 
@@ -123,34 +124,6 @@ function buildPRBody(
 }
 
 /**
- * Determine the version label from tags or fall back to a short SHA.
- */
-async function resolveVersion(
-  octokit: InstanceType<typeof Octokit>,
-  owner: string,
-  repo: string,
-  commitSha: string
-): Promise<string> {
-  try {
-    const { data: tags } = await octokit.rest.repos.listTags({
-      owner,
-      repo,
-      per_page: 100,
-    });
-
-    const matchingTag = tags.find((t) => t.commit.sha === commitSha);
-    if (matchingTag) {
-      // Strip leading "v" (e.g. "v1.2.3" -> "1.2.3")
-      return matchingTag.name.replace(/^v/, "");
-    }
-  } catch (err) {
-    log.warn({ owner, repo, err }, "Failed to fetch tags for version resolution");
-  }
-
-  return commitSha.substring(0, 7);
-}
-
-/**
  * Create a pull request containing the generated OpenAPI spec.
  *
  * The full workflow:
@@ -161,9 +134,9 @@ async function resolveVersion(
  * 5. Open a pull request back to the default branch
  */
 export async function createPR(params: CreatePRParams): Promise<CreatePRResult> {
-  const { owner, repo, installationId, spec, parseResult, commitSha, docsOutput } = params;
+  const { owner, repo, installationId, spec, parseResult, commitSha, version, docsOutput } = params;
 
-  log.info({ owner, repo, commitSha }, "Starting PR creation");
+  log.info({ owner, repo, commitSha, version }, "Starting PR creation");
 
   // 1. Authenticate
   const token = await getValidToken(installationId);
@@ -172,11 +145,7 @@ export async function createPR(params: CreatePRParams): Promise<CreatePRResult> 
     userAgent: "AutoDocAPI/1.0",
   });
 
-  // 2. Resolve version
-  const version = await resolveVersion(octokit, owner, repo, commitSha);
-  log.info({ version }, "Resolved version for PR");
-
-  // 3. Get default branch and its latest commit SHA
+  // 2. Get default branch and its latest commit SHA
   const { data: repoData } = await octokit.rest.repos.get({ owner, repo });
   const defaultBranch = repoData.default_branch;
 
