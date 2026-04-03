@@ -13,7 +13,9 @@
       "Bash(dotnet *)",
       "Bash(gh repo:*)",
       "Bash(gh project:*)",
-      "Bash(gh issue:*)"
+      "Bash(gh issue:*)",
+      "Bash(gh pr:*)",
+      "Bash(xargs wc:*)"
     ]
   }
 }
