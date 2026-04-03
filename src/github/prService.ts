@@ -1,3 +1,4 @@
+import path from "path";
 import { Octokit } from "@octokit/rest";
 
 import { getValidToken } from "./appAuth";
@@ -198,6 +199,10 @@ export async function createPR(params: CreatePRParams): Promise<CreatePRResult> 
 
   // 5. Create or update the spec file
   const filePath = docsOutput || "docs/openapi.yaml";
+  const normalizedPath = path.posix.normalize(filePath);
+  if (normalizedPath.startsWith("..") || path.isAbsolute(normalizedPath)) {
+    throw new Error(`Unsafe file path rejected: ${filePath}`);
+  }
   const contentBase64 = Buffer.from(spec, "utf8").toString("base64");
   const commitMessage = "docs: update API documentation (AutoDocAPI)";
 
@@ -207,7 +212,7 @@ export async function createPR(params: CreatePRParams): Promise<CreatePRResult> 
     const { data: existingFile } = await octokit.rest.repos.getContent({
       owner,
       repo,
-      path: filePath,
+      path: normalizedPath,
       ref: branchName,
     });
     // getContent returns either a file object or an array (directory listing).
@@ -225,13 +230,13 @@ export async function createPR(params: CreatePRParams): Promise<CreatePRResult> 
   await octokit.rest.repos.createOrUpdateFileContents({
     owner,
     repo,
-    path: filePath,
+    path: normalizedPath,
     message: commitMessage,
     content: contentBase64,
     branch: branchName,
     ...(existingFileSha ? { sha: existingFileSha } : {}),
   });
-  log.info({ filePath, branchName }, "Committed spec file");
+  log.info({ filePath: normalizedPath, branchName }, "Committed spec file");
 
   // 6. Open the pull request
   const prTitle = `docs: API documentation update \u2014 ${version}`;

@@ -30,7 +30,12 @@ export function loadAutodocConfig(repoPath: string): AutoDocConfig | null {
     }
 
     if (typeof parsed.docs_output === "string") {
-      config.docsOutput = parsed.docs_output;
+      const normalized = path.posix.normalize(parsed.docs_output);
+      if (normalized.startsWith("..") || path.isAbsolute(normalized)) {
+        logger.warn({ docsOutput: parsed.docs_output }, "Rejected unsafe docs_output path");
+      } else {
+        config.docsOutput = normalized;
+      }
     }
 
     logger.info({ config }, "Loaded .autodoc.yml");
