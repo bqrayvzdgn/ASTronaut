@@ -140,7 +140,13 @@ async function checkForMinimalApi(repoPath: string): Promise<boolean> {
       }
     }
   }
-  return false;
+  // Fallback: search all .cs files for Minimal API patterns
+  return (
+    (await searchInCsFiles(repoPath, "MapGet")) ||
+    (await searchInCsFiles(repoPath, "MapPost")) ||
+    (await searchInCsFiles(repoPath, "MapPut")) ||
+    (await searchInCsFiles(repoPath, "MapDelete"))
+  );
 }
 
 async function searchInCsFiles(

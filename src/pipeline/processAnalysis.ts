@@ -137,18 +137,22 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
       version,
     });
 
-    // Create PR
+    // Create PR (with timeout)
     const docsOutput = autodocConfig?.docsOutput;
-    const prResult = await createPR({
-      owner,
-      repo,
-      installationId,
-      spec,
-      parseResult,
-      commitSha,
-      version,
-      docsOutput,
-    });
+    const prResult = await withTimeout(
+      createPR({
+        owner,
+        repo,
+        installationId,
+        spec,
+        parseResult,
+        commitSha,
+        version,
+        docsOutput,
+      }),
+      config.timeouts.prMs,
+      "createPR"
+    );
 
     log.info({ prNumber: prResult.prNumber, prUrl: prResult.prUrl }, "PR created");
 
