@@ -4,7 +4,7 @@ import yaml from "js-yaml";
 import { logger } from "../utils/logger";
 
 export interface AutoDocConfig {
-  framework?: "express" | "nestjs" | "aspnet";
+  framework?: "express" | "nestjs" | "aspnet" | "nextjs";
   docsOutput?: string;
 }
 
@@ -24,7 +24,7 @@ export function loadAutodocConfig(repoPath: string): AutoDocConfig | null {
 
     if (
       typeof parsed.framework === "string" &&
-      ["express", "nestjs", "aspnet"].includes(parsed.framework)
+      ["express", "nestjs", "aspnet", "nextjs"].includes(parsed.framework)
     ) {
       config.framework = parsed.framework as AutoDocConfig["framework"];
     }
