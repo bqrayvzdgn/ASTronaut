@@ -1,10 +1,43 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
-.env
-*.pem
-*.key
-coverage/
-*.log
-.DS_Store
+*.tsbuildinfo
+
+# .NET Analyzer build
 analyzer/bin/
 analyzer/obj/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials.json
+
+# Test & coverage
+coverage/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temp
+tmp/
+temp/
+*.tmp

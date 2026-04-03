@@ -1,0 +1,23 @@
+# Auto detect text files and ensure LF line endings
+* text=auto eol=lf
+
+# Force these to always use LF
+*.ts text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.sh text eol=lf
+
+# Force these to always use CRLF (Windows batch files)
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.ico binary
+*.pem binary
