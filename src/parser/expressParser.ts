@@ -461,6 +461,9 @@ export async function parseExpressRoutes(
   const files = collectSourceFiles(rootDir);
   logger.info({ fileCount: files.length, rootDir }, "Scanning Express routes");
 
+  // Pre-scan: build cross-file mount map (import var → source file, mount prefix)
+  const mountMap = buildMountMap(rootDir, files);
+
   for (const filePath of files) {
     try {
       const code = fs.readFileSync(filePath, "utf-8");
@@ -474,12 +477,184 @@ export async function parseExpressRoutes(
     }
   }
 
+  // Post-process: apply mount prefixes to routes from imported files
+  applyMountPrefixes(routes, mountMap);
+
   logger.info(
     { routeCount: routes.length, errorCount: errors.length },
     "Express route parsing complete"
   );
 
   return { routes, errors };
+}
+
+/**
+ * Resolve a require/import path to an actual file path.
+ */
+function resolveModulePath(
+  importPath: string,
+  fromFile: string,
+  rootDir: string
+): string | null {
+  if (!importPath.startsWith(".")) return null; // skip node_modules
+
+  const fromDir = path.dirname(path.join(rootDir, fromFile));
+  const candidates = [
+    path.resolve(fromDir, importPath),
+    path.resolve(fromDir, importPath + ".ts"),
+    path.resolve(fromDir, importPath + ".js"),
+    path.resolve(fromDir, importPath, "index.ts"),
+    path.resolve(fromDir, importPath, "index.js"),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+      return path.relative(rootDir, candidate).replace(/\\/g, "/");
+    }
+  }
+  return null;
+}
+
+interface MountInfo {
+  prefix: string;
+  sourceFile: string; // relative path of the file containing the routes
+}
+
+/**
+ * Pre-scan files to find app.use('/prefix', importedRouter) patterns
+ * and resolve import paths to actual file paths.
+ */
+function buildMountMap(
+  rootDir: string,
+  files: string[]
+): MountInfo[] {
+  const mounts: MountInfo[] = [];
+
+  for (const filePath of files) {
+    let code: string;
+    try {
+      code = fs.readFileSync(filePath, "utf-8");
+    } catch {
+      continue;
+    }
+
+    const relativePath = path.relative(rootDir, filePath).replace(/\\/g, "/");
+
+    let ast: any;
+    try {
+      ast = babelParser.parse(code, {
+        sourceType: "module",
+        plugins: ["typescript", "decorators-legacy", "jsx"],
+      });
+    } catch {
+      continue;
+    }
+
+    // Track: importVar → relative module path
+    const importMap = new Map<string, string>();
+
+    traverse(ast, {
+      // const userRouter = require('./routes/users')
+      VariableDeclarator(p: any) {
+        const init = p.node.init;
+        const id = p.node.id;
+        if (!init || id?.type !== "Identifier") return;
+
+        if (
+          init.type === "CallExpression" &&
+          init.callee?.type === "Identifier" &&
+          init.callee.name === "require" &&
+          init.arguments?.[0]?.type === "StringLiteral"
+        ) {
+          const resolved = resolveModulePath(
+            init.arguments[0].value,
+            relativePath,
+            rootDir
+          );
+          if (resolved) importMap.set(id.name, resolved);
+        }
+      },
+
+      // import userRouter from './routes/users'
+      ImportDeclaration(p: any) {
+        const source = p.node.source?.value;
+        if (!source) return;
+        const resolved = resolveModulePath(source, relativePath, rootDir);
+        if (!resolved) return;
+
+        for (const spec of p.node.specifiers ?? []) {
+          if (spec.local?.type === "Identifier") {
+            importMap.set(spec.local.name, resolved);
+          }
+        }
+      },
+    });
+
+    // Find app.use('/prefix', importedVar) patterns
+    traverse(ast, {
+      CallExpression(p: any) {
+        const callee = p.node.callee;
+        if (
+          callee?.type !== "MemberExpression" ||
+          callee.property?.type !== "Identifier" ||
+          callee.property.name !== "use"
+        ) {
+          return;
+        }
+
+        const args = p.node.arguments;
+        if (
+          args.length >= 2 &&
+          args[0].type === "StringLiteral" &&
+          args[args.length - 1].type === "Identifier"
+        ) {
+          const prefix = args[0].value;
+          const varName = args[args.length - 1].name;
+          const sourceFile = importMap.get(varName);
+          if (sourceFile) {
+            mounts.push({ prefix, sourceFile });
+          }
+        }
+      },
+    });
+  }
+
+  return mounts;
+}
+
+/**
+ * Apply mount prefixes to routes parsed from imported files.
+ * Routes from a mounted file get the mount prefix prepended to their path.
+ */
+function applyMountPrefixes(
+  routes: RouteInfo[],
+  mounts: MountInfo[]
+): void {
+  if (mounts.length === 0) return;
+
+  // Build source file → prefix map
+  const prefixBySource = new Map<string, string>();
+  for (const mount of mounts) {
+    // If multiple mounts for same file, use the first one
+    if (!prefixBySource.has(mount.sourceFile)) {
+      prefixBySource.set(mount.sourceFile, mount.prefix);
+    }
+  }
+
+  for (const route of routes) {
+    const prefix = prefixBySource.get(route.source);
+    if (prefix && !route.path.startsWith(prefix)) {
+      // Avoid double slashes
+      const cleanPrefix = prefix.endsWith("/") ? prefix.slice(0, -1) : prefix;
+      const cleanPath = route.path.startsWith("/") ? route.path : "/" + route.path;
+      route.path = cleanPrefix + cleanPath;
+
+      // Also set routePrefix if not already set
+      if (!route.routePrefix) {
+        route.routePrefix = prefix;
+      }
+    }
+  }
 }
 
 /**
@@ -498,12 +673,6 @@ export function parseExpressSource(
 // ---------------------------------------------------------------------------
 // Core file-level parser
 // ---------------------------------------------------------------------------
-// TODO(#14): Cross-file router tracking. Currently each file is parsed
-// independently. When a file does `const userRouter = require('./routes/users')`
-// and then `app.use('/api/users', userRouter)`, the prefix is detected but
-// routes defined in the external file are not linked. Full implementation
-// requires: 1) build a map of module exports across all files, 2) resolve
-// require()/import references, 3) compose the full route tree with prefixes.
 
 function parseFile(
   code: string,
