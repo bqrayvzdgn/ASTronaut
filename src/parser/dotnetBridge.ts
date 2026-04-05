@@ -8,6 +8,11 @@ const execFileAsync = promisify(execFile);
 
 const DOTNET_TIMEOUT_MS = config.timeouts?.parseMs ?? 60_000;
 const MAX_BUFFER_BYTES = 10 * 1024 * 1024; // 10 MB
+const MAX_LOG_OUTPUT = 1000; // Max chars logged from subprocess output
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? s.substring(0, max) + "... (truncated)" : s;
+}
 
 interface DotnetRouteInfo {
   path: string;
@@ -91,7 +96,7 @@ export async function parseDotnet(repoPath: string): Promise<ParseResult> {
     }
 
     const stderrOutput = execError.stderr || execError.message || "Unknown error";
-    logger.error({ repoPath, error: stderrOutput }, ".NET analyzer failed");
+    logger.error({ repoPath, error: truncate(stderrOutput, MAX_LOG_OUTPUT) }, ".NET analyzer failed");
     return {
       routes: [],
       errors: [
@@ -105,10 +110,10 @@ export async function parseDotnet(repoPath: string): Promise<ParseResult> {
 
   // Capture stderr warnings (non-fatal)
   if (stderr) {
-    logger.warn({ repoPath, stderr }, ".NET analyzer stderr output");
+    logger.warn({ repoPath, stderr: truncate(stderr, MAX_LOG_OUTPUT) }, ".NET analyzer stderr output");
     errors.push({
       file: repoPath,
-      reason: `Analyzer warning: ${stderr.trim()}`,
+      reason: `Analyzer warning: ${truncate(stderr.trim(), MAX_LOG_OUTPUT)}`,
     });
   }
 
@@ -130,7 +135,7 @@ export async function parseDotnet(repoPath: string): Promise<ParseResult> {
     parsed = JSON.parse(trimmed) as DotnetParseResult;
   } catch {
     logger.error(
-      { repoPath, stdout: stdout.substring(0, 500) },
+      { repoPath, stdout: truncate(stdout, MAX_LOG_OUTPUT) },
       "Failed to parse analyzer JSON output"
     );
     return {

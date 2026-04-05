@@ -8,6 +8,17 @@ export interface AutoDocConfig {
   docsOutput?: string;
 }
 
+function isPathSafe(p: string): boolean {
+  const normalized = path.posix.normalize(p);
+  return (
+    !normalized.startsWith("..") &&
+    !path.isAbsolute(normalized) &&
+    !p.includes("\\") &&
+    !p.includes("\0") &&
+    !p.includes(":")
+  );
+}
+
 export function loadAutodocConfig(repoPath: string): AutoDocConfig | null {
   const configPath = path.join(repoPath, ".autodoc.yml");
 
@@ -30,11 +41,10 @@ export function loadAutodocConfig(repoPath: string): AutoDocConfig | null {
     }
 
     if (typeof parsed.docs_output === "string") {
-      const normalized = path.posix.normalize(parsed.docs_output);
-      if (normalized.startsWith("..") || path.isAbsolute(normalized)) {
+      if (!isPathSafe(parsed.docs_output)) {
         logger.warn({ docsOutput: parsed.docs_output }, "Rejected unsafe docs_output path");
       } else {
-        config.docsOutput = normalized;
+        config.docsOutput = path.posix.normalize(parsed.docs_output);
       }
     }
 

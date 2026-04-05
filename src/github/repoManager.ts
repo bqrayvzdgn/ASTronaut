@@ -11,6 +11,18 @@ const execFileAsync = promisify(execFile);
 const log = logger.child({ module: "repoManager" });
 
 /**
+ * GitHub owner and repo names may only contain alphanumerics, hyphens,
+ * underscores, and dots. Reject anything else to prevent argument injection.
+ */
+const SAFE_NAME = /^[a-zA-Z0-9._-]+$/;
+
+function assertSafeName(value: string, label: string): void {
+  if (!SAFE_NAME.test(value)) {
+    throw new Error(`Invalid ${label}: contains disallowed characters`);
+  }
+}
+
+/**
  * Sensitive file patterns that must be removed from any cloned repository
  * before analysis begins. Only exact names and simple prefix/suffix globs
  * are matched -- we intentionally avoid broad wildcard matching.
@@ -41,18 +53,29 @@ export async function cloneRepo(
   repo: string,
   installationToken: string
 ): Promise<string> {
+  assertSafeName(owner, "owner");
+  assertSafeName(repo, "repo");
+
   const timestamp = Date.now();
   const dirName = `autodocapi_${owner}_${repo}_${timestamp}`;
   const repoPath = path.join(os.tmpdir(), dirName);
 
-  const cloneUrl = `https://x-access-token:${installationToken}@github.com/${owner}/${repo}.git`;
+  const cloneUrl = `https://github.com/${owner}/${repo}.git`;
 
   log.info({ owner, repo, repoPath }, "Cloning repository");
 
   try {
     await execFileAsync(
       "git",
-      ["clone", "--depth", "1", cloneUrl, repoPath],
+      [
+        "-c",
+        `http.extraHeader=Authorization: Basic ${Buffer.from(`x-access-token:${installationToken}`).toString("base64")}`,
+        "clone",
+        "--depth",
+        "1",
+        cloneUrl,
+        repoPath,
+      ],
       { timeout: config.timeouts.cloneMs }
     );
   } catch (err: unknown) {

@@ -169,7 +169,13 @@ export async function createPR(params: CreatePRParams): Promise<CreatePRResult> 
   // 5. Create or update the spec file
   const filePath = docsOutput || "docs/openapi.yaml";
   const normalizedPath = path.posix.normalize(filePath);
-  if (normalizedPath.startsWith("..") || path.isAbsolute(normalizedPath)) {
+  if (
+    normalizedPath.startsWith("..") ||
+    path.isAbsolute(normalizedPath) ||
+    filePath.includes("\\") ||
+    filePath.includes("\0") ||
+    filePath.includes(":")
+  ) {
     throw new Error(`Unsafe file path rejected: ${filePath}`);
   }
   const contentBase64 = Buffer.from(spec, "utf8").toString("base64");
