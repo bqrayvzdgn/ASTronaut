@@ -57,7 +57,7 @@ export async function cloneRepo(
   assertSafeName(repo, "repo");
 
   const timestamp = Date.now();
-  const dirName = `autodocapi_${owner}_${repo}_${timestamp}`;
+  const dirName = `astronaut_${owner}_${repo}_${timestamp}`;
   const repoPath = path.join(os.tmpdir(), dirName);
 
   const cloneUrl = `https://github.com/${owner}/${repo}.git`;

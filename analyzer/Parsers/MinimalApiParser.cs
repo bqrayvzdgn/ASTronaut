@@ -2,9 +2,9 @@ using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using AutoDocAnalyzer.Models;
+using ASTronautAnalyzer.Models;
 
-namespace AutoDocAnalyzer.Parsers;
+namespace ASTronautAnalyzer.Parsers;
 
 public class MinimalApiParser
 {

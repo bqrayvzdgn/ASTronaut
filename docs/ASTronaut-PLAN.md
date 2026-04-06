@@ -1,4 +1,4 @@
-# AutoDocAPI — Detayli Gelistirme Plani
+# ASTronaut — Detayli Gelistirme Plani
 
 > Bu dokuman, projeyi sifirdan gelistirmek icin gereken tum kararlari, teknik detaylari ve uygulama talimatlarini icerir.
 > Claude Code'a verildiginde projeyi bastan sona uretebilmelidir.
@@ -7,7 +7,7 @@
 
 ## 1. Proje Tanimi
 
-**AutoDocAPI**, GitHub Actions deploy basarili olduktan sonra repo'nun kaynak kodunu AST ile analiz ederek OpenAPI 3.0.3 spec uretip PR olarak acan bir GitHub App.
+**ASTronaut**, GitHub Actions deploy basarili olduktan sonra repo'nun kaynak kodunu AST ile analiz ederek OpenAPI 3.0.3 spec uretip PR olarak acan bir GitHub App.
 
 ### Temel Prensipler
 - **AI yok** — saf AST parser. Hallucination riski sifir.
@@ -56,11 +56,11 @@
 GitHub: Deploy workflow basarili (workflow_run completed event)
     |
     v
-GitHub webhook POST → https://api.autodocapi.com/webhook/github
+GitHub webhook POST → https://api.astronaut.com/webhook/github
     |
     v
 +--------------------------------------------------+
-|              AutoDocAPI Backend                    |
+|              ASTronaut Backend                    |
 |                                                   |
 |  1. Webhook Handler                               |
 |     - X-Hub-Signature-256 dogrulama               |
@@ -111,7 +111,7 @@ GitHub webhook POST → https://api.autodocapi.com/webhook/github
 |  8. GitHub Service (PR)                            |
 |     - Token gecerliligi kontrol et, gerekirse yenile|
 |     - Branch olustur:                              |
-|       autodocapi/docs-YYYY-MM-DD-HHmmss            |
+|       astronaut/docs-YYYY-MM-DD-HHmmss            |
 |     - docs/openapi.yaml (veya config'deki yol)     |
 |       dosyasini commit et                          |
 |     - PR ac: title + basit description             |
@@ -157,7 +157,7 @@ PR Service → GitHub'a PR ac
 ## 5. Dosya Yapisi
 
 ```
-autodocapi/
+astronaut/
 ├── src/
 │   ├── api/
 │   │   ├── webhookHandler.ts       # GitHub webhook endpoint
@@ -190,7 +190,7 @@ autodocapi/
 │   │   └── rateLimiter.ts          # Repo bazli rate limiting
 │   └── app.ts                      # Express app baslat + middleware
 ├── analyzer/                        # .NET Roslyn projesi
-│   ├── AutoDocAnalyzer.csproj
+│   ├── ASTronautAnalyzer.csproj
 │   ├── Program.cs                   # CLI entry point: dotnet restore → MSBuildWorkspace → parse → JSON stdout
 │   ├── Parsers/
 │   │   ├── ControllerParser.cs      # [ApiController] + [HttpGet] vb. parse
@@ -495,7 +495,7 @@ Gerekli npm paketleri: @octokit/app, @octokit/rest
 
 ```
 clone(owner, repo, installationToken):
-1. Gecici dizin olustur: os.tmpdir() + /autodocapi_{owner}_{repo}_{timestamp}/
+1. Gecici dizin olustur: os.tmpdir() + /astronaut_{owner}_{repo}_{timestamp}/
 2. git clone --depth 1 https://x-access-token:{token}@github.com/{owner}/{repo}.git
 3. Timeout: max 30 saniye
 4. repoPath don
@@ -688,7 +688,7 @@ parse(repoPath):
 ### 8.10 analyzer/ — .NET Roslyn Projesi
 
 ```
-CLI uygulamasi: dotnet AutoDocAnalyzer.dll /path/to/repo
+CLI uygulamasi: dotnet ASTronautAnalyzer.dll /path/to/repo
 
 Program.cs:
 1. Argumandan repo path'i al
@@ -795,7 +795,7 @@ createPR(owner, repo, spec, parseResult, options):
 4. Default branch'in son commit SHA'sini al
 
 5. Yeni branch olustur:
-   - Isim: "autodocapi/docs-YYYY-MM-DD-HHmmss"
+   - Isim: "astronaut/docs-YYYY-MM-DD-HHmmss"
    - POST /repos/{owner}/{repo}/git/refs
    - ref: "refs/heads/{branchName}"
    - sha: default branch'in son commit SHA'si
@@ -804,7 +804,7 @@ createPR(owner, repo, spec, parseResult, options):
 6. Dosyayi olustur veya guncelle:
    - PUT /repos/{owner}/{repo}/contents/{docsPath}
    - path: options.docsOutput || "docs/openapi.yaml"
-   - message: "docs: update API documentation (AutoDocAPI)"
+   - message: "docs: update API documentation (ASTronaut)"
    - content: Base64 encoded spec
    - branch: branchName
    - Dosya zaten varsa: onceki dosyanin SHA'sini al ve gonder
@@ -960,7 +960,7 @@ Her adim kendi timeout'u ile calisir. Hangi adimda tikandigini loglara yazar.
 | Konu | Deger |
 |---|---|
 | Tetiklenme | Her basarili deploy sonrasi (workflow_run completed + success) |
-| Branch adi | `autodocapi/docs-YYYY-MM-DD-HHmmss` |
+| Branch adi | `astronaut/docs-YYYY-MM-DD-HHmmss` |
 | Varsayilan dosya yolu | `docs/openapi.yaml` |
 | Dosya yolu override | `.autodoc.yml` → `docs_output` alani |
 | Dosya formati | YAML |
@@ -985,7 +985,7 @@ PORT=3000
 NODE_ENV=development
 
 # Database
-DATABASE_URL=postgresql://user:password@localhost:5432/autodocapi
+DATABASE_URL=postgresql://user:password@localhost:5432/astronaut
 
 # GitHub App
 GITHUB_APP_ID=123456
@@ -993,7 +993,7 @@ GITHUB_APP_PRIVATE_KEY_PATH=./private-key.pem
 GITHUB_WEBHOOK_SECRET=your-webhook-secret
 
 # .NET Analyzer
-DOTNET_ANALYZER_PATH=./analyzer/bin/Release/net8.0/AutoDocAnalyzer.dll
+DOTNET_ANALYZER_PATH=./analyzer/bin/Release/net8.0/ASTronautAnalyzer.dll
 
 # Limits
 MAX_CONCURRENT_ANALYSES=3
@@ -1108,14 +1108,14 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd /opt/autodocapi
+            cd /opt/astronaut
             git pull origin main
             npm ci --production
             npm run build
             cd analyzer
             dotnet publish -c Release
             cd ..
-            pm2 restart autodocapi
+            pm2 restart astronaut
 ```
 
 ---
@@ -1309,14 +1309,14 @@ Sunucu uzerinde kurulu olmasi gerekenler:
 - Nginx (reverse proxy + SSL — onerilir)
 
 Dizin yapisi:
-/opt/autodocapi/           → proje kodu
-/var/log/autodocapi/       → log dosyalari
+/opt/astronaut/           → proje kodu
+/var/log/astronaut/       → log dosyalari
 
 PM2 yapilandirmasi:
-pm2 start dist/app.js --name autodocapi
+pm2 start dist/app.js --name astronaut
 
 Nginx reverse proxy:
-- api.autodocapi.com → localhost:3000
+- api.astronaut.com → localhost:3000
 - SSL: Let's Encrypt (certbot)
 ```
 
@@ -1325,7 +1325,7 @@ Nginx reverse proxy:
 ## 19. GitHub App Marketplace Ayarlari
 
 ```
-App ismi: AutoDocAPI
+App ismi: ASTronaut
 Aciklama: Automatically generate OpenAPI documentation from your source code after every successful deploy.
 
 Gerekli izinler:
@@ -1335,7 +1335,7 @@ Gerekli izinler:
   - Metadata: Read-only (repo bilgisi)
 
 Webhook:
-- URL: https://api.autodocapi.com/webhook/github
+- URL: https://api.astronaut.com/webhook/github
 - Secret: GITHUB_WEBHOOK_SECRET env variable ile eslesir
 - Events: Workflow run
 

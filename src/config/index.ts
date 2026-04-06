@@ -17,7 +17,7 @@ export const config = {
 
   dotnetAnalyzerPath:
     process.env.DOTNET_ANALYZER_PATH ||
-    path.resolve("./analyzer/bin/Release/net8.0/AutoDocAnalyzer.dll"),
+    path.resolve("./analyzer/bin/Release/net8.0/ASTronautAnalyzer.dll"),
 
   limits: {
     maxConcurrentAnalyses: parseInt(

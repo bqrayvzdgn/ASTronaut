@@ -1,5 +1,5 @@
 {
-  "name": "autodocapi",
+  "name": "astronaut",
   "version": "1.0.0",
   "description": "Automatically generate OpenAPI documentation from source code after every successful deploy",
   "main": "dist/app.js",

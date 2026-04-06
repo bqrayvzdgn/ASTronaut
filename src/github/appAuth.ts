@@ -44,7 +44,7 @@ export function createAppOctokit(): InstanceType<typeof Octokit> {
   const token = createAppJwt();
   return new Octokit({
     auth: token,
-    userAgent: "AutoDocAPI/1.0",
+    userAgent: "ASTronaut/1.0",
   });
 }
 

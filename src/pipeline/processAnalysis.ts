@@ -81,7 +81,7 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
     throw err;
   }
 
-  const octokit = new Octokit({ auth: token, userAgent: "AutoDocAPI/1.0" });
+  const octokit = new Octokit({ auth: token, userAgent: "ASTronaut/1.0" });
 
   const permissions = await checkRepoPermissions(octokit, owner, repo);
   if (!permissions.canPush || permissions.archived) {

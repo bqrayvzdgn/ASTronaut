@@ -1,6 +1,6 @@
-# AutoDocAPI — Detayli Akis Dokumani
+# ASTronaut — Detayli Akis Dokumani
 
-> Bu dokuman, AutoDocAPI'nin bastan sona calisma akisini adim adim gosterir.
+> Bu dokuman, ASTronaut'nin bastan sona calisma akisini adim adim gosterir.
 > Her faz, her karar noktasi ve her hata senaryosu detayli olarak aciklanmistir.
 
 ---
@@ -8,12 +8,12 @@
 ## Faz 0: Kullanici GitHub App'i Kuruyor (Tek Seferlik)
 
 ```
-Kullanici → GitHub Marketplace → "AutoDocAPI" → Install
+Kullanici → GitHub Marketplace → "ASTronaut" → Install
     |
     v
 GitHub izin ekrani:
 +----------------------------------------------+
-|  AutoDocAPI is requesting access to:          |
+|  ASTronaut is requesting access to:          |
 |                                               |
 |  [x] Read access to code                     |
 |  [x] Read and write access to pull requests  |
@@ -31,7 +31,7 @@ GitHub izin ekrani:
     v  Kullanici "Install" tikladi
     |
     v
-GitHub → AutoDocAPI backend'e webhook gonderir:
+GitHub → ASTronaut backend'e webhook gonderir:
     POST /webhook/github
     x-github-event: installation
     payload: {
@@ -44,7 +44,7 @@ GitHub → AutoDocAPI backend'e webhook gonderir:
     }
     |
     v
-AutoDocAPI Backend:
+ASTronaut Backend:
     1. installations tablosuna kaydet:
        { github_installation_id: 12345, owner: "my-org" }
     2. repos tablosuna kaydet:
@@ -88,10 +88,10 @@ GitHub Actions: deploy.yml tetikleniyor
     |
     v
 GitHub otomatik olarak webhook gonderir
-(cunku AutoDocAPI App "Workflow run" event'ine abone)
+(cunku ASTronaut App "Workflow run" event'ine abone)
     |
     v
-POST https://api.autodocapi.com/webhook/github
+POST https://api.astronaut.com/webhook/github
 Headers:
     x-github-event: workflow_run
     x-hub-signature-256: sha256=abc123...
@@ -291,7 +291,7 @@ Log: info "Analysis started" { owner: "my-org", repo: "payment-api", commitSha: 
 |                                                    |
 |  Timeout: 30 saniye (CLONE_TIMEOUT_MS)             |
 |                                                    |
-|  tempDir = /tmp/autodocapi_my-org_payment-api_     |
+|  tempDir = /tmp/astronaut_my-org_payment-api_     |
 |            1712063200000/                          |
 |                                                    |
 |  Komut:                                            |
@@ -625,9 +625,9 @@ ParseResult ciktisi hazir (NestJS icin)
 |                                                    |
 |  Node.js tarafinda:                                |
 |  child_process.execFile("dotnet", [                |
-|    "/opt/autodocapi/analyzer/bin/Release/           |
-|     net8.0/AutoDocAnalyzer.dll",                   |
-|    "/tmp/autodocapi_my-org_..."                    |
+|    "/opt/astronaut/analyzer/bin/Release/           |
+|     net8.0/ASTronautAnalyzer.dll",                   |
+|    "/tmp/astronaut_my-org_..."                    |
 |  ], { timeout: 120000 })                           |
 |  Timeout: 120 saniye (restore 60s + parse 60s)     |
 |                                                    |
@@ -964,7 +964,7 @@ Log: info "Generated OpenAPI spec (3 endpoints, 1 schema)"
 |                                                    |
 |  POST /repos/my-org/payment-api/git/refs           |
 |  {                                                 |
-|    "ref": "refs/heads/autodocapi/                  |
+|    "ref": "refs/heads/astronaut/                  |
 |            docs-2026-04-02-143500",                |
 |    "sha": "f5e4d3c2b1a0"                          |
 |  }                                                 |
@@ -976,7 +976,7 @@ Log: info "Generated OpenAPI spec (3 endpoints, 1 schema)"
 |  Dosya zaten var mi kontrol et:                    |
 |  GET /repos/my-org/payment-api/contents/           |
 |    docs/openapi.yaml                               |
-|    ?ref=autodocapi/docs-2026-04-02-143500          |
+|    ?ref=astronaut/docs-2026-04-02-143500          |
 |  +-- 200 → onceki SHA'yi al (guncelleme)           |
 |  +-- 404 → yeni dosya (olusturma)                  |
 |                                                    |
@@ -984,9 +984,9 @@ Log: info "Generated OpenAPI spec (3 endpoints, 1 schema)"
 |    docs/openapi.yaml                               |
 |  {                                                 |
 |    "message": "docs: update API documentation      |
-|                (AutoDocAPI)",                       |
+|                (ASTronaut)",                       |
 |    "content": "b3BlbmFwaTog...",  ← Base64 spec    |
-|    "branch": "autodocapi/docs-2026-04-02-143500",  |
+|    "branch": "astronaut/docs-2026-04-02-143500",  |
 |    "sha": "..." (guncelleme ise)                   |
 |  }                                                 |
 |                                                    |
@@ -1003,7 +1003,7 @@ Log: info "Generated OpenAPI spec (3 endpoints, 1 schema)"
 |  {                                                 |
 |    "title": "docs: API documentation update        |
 |              — 2.1.0",                             |
-|    "head": "autodocapi/docs-2026-04-02-143500",    |
+|    "head": "astronaut/docs-2026-04-02-143500",    |
 |    "base": "main",                                 |
 |    "body": (asagidaki PR description)              |
 |  }                                                 |
@@ -1044,7 +1044,7 @@ Log: info "Generated OpenAPI spec (3 endpoints, 1 schema)"
 ```
 +--- ADIM 12.1: Repo Sil ---------------------------+
 |                                                    |
-|  rm -rf /tmp/autodocapi_my-org_payment-api_...     |
+|  rm -rf /tmp/astronaut_my-org_payment-api_...     |
 |                                                    |
 |  Log: info "Repo cleaned up"                        |
 +----------------------------------------------------+
@@ -1097,10 +1097,10 @@ Kuyruktan sonraki ise gec...
 Gelistirici GitHub'da PR bildirimini gorur:
 
 +------------------------------------------------------+
-|  AutoDocAPI opened a pull request                     |
+|  ASTronaut opened a pull request                     |
 |                                                       |
 |  docs: API documentation update — 2.1.0         #42  |
-|  autodocapi/docs-2026-04-02-143500 → main             |
+|  astronaut/docs-2026-04-02-143500 → main             |
 |                                                       |
 |  ## API Documentation Generated                       |
 |                                                       |
@@ -1127,7 +1127,7 @@ Gelistirici:
   1. PR'i review eder → spec'e bakar
   2. "Merge pull request" tiklar
   3. docs/openapi.yaml repo'da kalir
-  4. Bir sonraki deploy'da AutoDocAPI tekrar calisir,
+  4. Bir sonraki deploy'da ASTronaut tekrar calisir,
      guncel spec ile yeni PR acar
 ```
 

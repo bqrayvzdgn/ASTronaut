@@ -23,7 +23,7 @@ app.use(pinoHttp({ logger }));
 app.use(routes);
 
 app.listen(config.port, () => {
-  logger.info({ port: config.port }, "AutoDocAPI server started");
+  logger.info({ port: config.port }, "ASTronaut server started");
 });
 
 export default app;

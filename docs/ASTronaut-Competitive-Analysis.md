@@ -1,4 +1,4 @@
-# AutoDocAPI -- Competitive Analysis Report
+# ASTronaut -- Competitive Analysis Report
 
 **Date:** 2026-04-02
 **Analyst:** Claude Code (Opus 4.6)
@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-After exhaustive research across open-source repositories, SaaS platforms, GitHub Marketplace, npm registry, NuGet, and industry publications, **no existing product replicates the exact combination that AutoDocAPI offers**: a GitHub App that listens to deploy events, performs pure AST-based OpenAPI 3.0.3 generation from source code (Express, NestJS, ASP.NET Core), and opens a PR with the generated spec -- all with zero config and no AI.
+After exhaustive research across open-source repositories, SaaS platforms, GitHub Marketplace, npm registry, NuGet, and industry publications, **no existing product replicates the exact combination that ASTronaut offers**: a GitHub App that listens to deploy events, performs pure AST-based OpenAPI 3.0.3 generation from source code (Express, NestJS, ASP.NET Core), and opens a PR with the generated spec -- all with zero config and no AI.
 
 Individual pieces of this functionality exist across dozens of tools. But the specific combination of (1) deploy-triggered, (2) multi-framework/multi-language, (3) pure AST (no AI, no runtime, no annotations required), (4) GitHub App that opens PRs -- this exact product does not exist. There is a genuine market gap.
 
@@ -22,7 +22,7 @@ Individual pieces of this functionality exist across dozens of tools. But the sp
 - **Supported frameworks:** Express (TypeScript only)
 - **Type:** npm library (CLI)
 - **Pricing:** Free / open source
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Express/TS only -- no NestJS, no ASP.NET Core
   - Library you run locally or in your own CI -- not a GitHub App
   - No deploy-event trigger, no PR creation
@@ -37,7 +37,7 @@ Individual pieces of this functionality exist across dozens of tools. But the sp
 - **Type:** npm library
 - **Pricing:** Free / open source
 - **npm weekly downloads:** Very popular (~200k+)
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Not true AST -- uses pattern matching, less accurate
   - Express only
   - Library, not a service or GitHub App
@@ -51,11 +51,11 @@ Individual pieces of this functionality exist across dozens of tools. But the sp
 - **Supported frameworks:** NestJS only
 - **Type:** npm library / SDK
 - **Pricing:** Free / open source
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - NestJS only -- no Express, no ASP.NET
   - Requires being part of the build process (not external analysis)
   - No GitHub App, no deploy trigger, no PR creation
-  - **Most similar to AutoDocAPI's NestJS approach** in philosophy (no decorators needed)
+  - **Most similar to ASTronaut's NestJS approach** in philosophy (no decorators needed)
 
 ### 1.4 StackHawk (AI-Powered OAS Generation)
 
@@ -64,8 +64,8 @@ Individual pieces of this functionality exist across dozens of tools. But the sp
 - **Supported frameworks:** Multiple (details not fully public)
 - **Type:** SaaS platform
 - **Pricing:** Enterprise pricing (not publicly listed; security testing platform)
-- **Key differences from AutoDocAPI:**
-  - Uses AI -- AutoDocAPI is pure AST (no hallucination risk)
+- **Key differences from ASTronaut:**
+  - Uses AI -- ASTronaut is pure AST (no hallucination risk)
   - Primary product is security testing, not documentation
   - SaaS, not a GitHub App
   - No PR creation with spec
@@ -78,8 +78,8 @@ Individual pieces of this functionality exist across dozens of tools. But the sp
 - **Supported frameworks:** Multiple frameworks (details not fully public)
 - **Type:** SaaS platform (security-focused)
 - **Pricing:** Enterprise pricing
-- **Key differences from AutoDocAPI:**
-  - **Hybrid AST + AI** -- AutoDocAPI is pure AST
+- **Key differences from ASTronaut:**
+  - **Hybrid AST + AI** -- ASTronaut is pure AST
   - Primary focus is security testing, not documentation
   - Not a GitHub App, no PR creation
   - LLM involvement means potential hallucination
@@ -88,7 +88,7 @@ Individual pieces of this functionality exist across dozens of tools. But the sp
 
 ## 2. PARTIAL COMPETITORS -- Annotation/Decorator-Based (Require code changes)
 
-These tools generate OpenAPI but **require developers to add annotations, decorators, or comments** to their code. AutoDocAPI requires zero code changes.
+These tools generate OpenAPI but **require developers to add annotations, decorators, or comments** to their code. ASTronaut requires zero code changes.
 
 ### 2.1 @nestjs/swagger
 
@@ -97,7 +97,7 @@ These tools generate OpenAPI but **require developers to add annotations, decora
 - **Supported frameworks:** NestJS only
 - **Type:** npm library
 - **Pricing:** Free / open source
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - **Requires decorators** -- significant code modification needed
   - Runtime generation (runs inside the app)
   - NestJS only
@@ -110,7 +110,7 @@ These tools generate OpenAPI but **require developers to add annotations, decora
 - **Supported frameworks:** Any Node.js (framework-agnostic)
 - **Type:** npm library
 - **Pricing:** Free / open source
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - **Requires manual JSDoc annotations** with full YAML -- very verbose
   - Does not analyze actual code -- only reads comments
   - Not AST-based (reads comment text, not code structure)
@@ -123,7 +123,7 @@ These tools generate OpenAPI but **require developers to add annotations, decora
 - **Supported frameworks:** Express only
 - **Type:** npm library
 - **Pricing:** Free / open source
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Requires manual JSDoc comments
   - Not AST-based
   - Express only
@@ -136,7 +136,7 @@ These tools generate OpenAPI but **require developers to add annotations, decora
 - **Supported frameworks:** Express, Koa, Hapi (via TypeScript)
 - **Type:** npm library / framework
 - **Pricing:** Free / open source
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - **Requires you to write your app using tsoa's framework** -- not retro-fittable to existing Express apps without rewrite
   - Decorator-dependent
   - TypeScript/Node.js only
@@ -150,7 +150,7 @@ These tools generate OpenAPI but **require developers to add annotations, decora
 - **Type:** NuGet library
 - **Pricing:** Free / open source
 - **Status:** **No longer actively maintained.** Removed from .NET 9 template. Replaced by Microsoft.AspNetCore.OpenApi.
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - **Requires integration into the project** (NuGet reference + configuration)
   - Runtime reflection, not external AST analysis
   - Developers must install and configure it
@@ -163,7 +163,7 @@ These tools generate OpenAPI but **require developers to add annotations, decora
 - **Supported frameworks:** ASP.NET Core, ASP.NET Web API
 - **Type:** NuGet library + CLI + GUI (NSwagStudio)
 - **Pricing:** Free / open source
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Requires integration into the project
   - Runtime reflection approach
   - No external analysis capability
@@ -176,7 +176,7 @@ These tools generate OpenAPI but **require developers to add annotations, decora
 - **Supported frameworks:** ASP.NET Core (Controller + Minimal API)
 - **Type:** Built-in library (NuGet)
 - **Pricing:** Free (part of .NET SDK)
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Requires developers to add the package and configure it
   - Runtime or build-time (but inside the project)
   - No external analysis
@@ -189,8 +189,8 @@ These tools generate OpenAPI but **require developers to add annotations, decora
 - **Supported frameworks:** Spring Boot, Spring MVC, Spring WebFlux
 - **Type:** Java library (Maven/Gradle)
 - **Pricing:** Free / open source
-- **Key differences from AutoDocAPI:**
-  - Java/Spring only (AutoDocAPI targets JS/TS/C#)
+- **Key differences from ASTronaut:**
+  - Java/Spring only (ASTronaut targets JS/TS/C#)
   - Requires library integration
   - Runtime reflection, not external AST
   - No GitHub App, no PR creation
@@ -202,7 +202,7 @@ These tools generate OpenAPI but **require developers to add annotations, decora
 - **Supported frameworks:** FastAPI only
 - **Type:** Python framework (built-in feature)
 - **Pricing:** Free / open source
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Python only
   - Built into the framework -- not external
   - Requires using FastAPI specifically
@@ -215,11 +215,11 @@ These tools generate OpenAPI but **require developers to add annotations, decora
 - **Supported frameworks:** Laravel (PHP) only
 - **Type:** Composer package
 - **Pricing:** Free / open source (Pro version available)
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - PHP/Laravel only
   - Installed inside the project
   - No GitHub App, no PR creation
-  - **Similar philosophy** to AutoDocAPI (no annotations needed, static analysis)
+  - **Similar philosophy** to ASTronaut (no annotations needed, static analysis)
 
 ### 2.11 Deepkit (TypeScript)
 
@@ -228,7 +228,7 @@ These tools generate OpenAPI but **require developers to add annotations, decora
 - **Supported frameworks:** Deepkit framework only
 - **Type:** npm framework
 - **Pricing:** Free / open source
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Requires using Deepkit framework (not Express/NestJS)
   - Runtime approach, not external analysis
   - No GitHub App, no PR creation
@@ -240,7 +240,7 @@ These tools generate OpenAPI but **require developers to add annotations, decora
 - **Supported frameworks:** Framework-agnostic (contract-first)
 - **Type:** npm CLI tool
 - **Pricing:** Free / open source
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Contract-first approach (write contracts, not parse existing code)
   - Doesn't analyze existing Express/NestJS/ASP.NET apps
   - No GitHub App, no PR creation
@@ -256,7 +256,7 @@ These tools generate OpenAPI but **require developers to add annotations, decora
 - **Supported frameworks:** Express 4.x
 - **Type:** npm library
 - **Pricing:** Free / open source
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Runtime traffic analysis -- not static code analysis
   - Requires the app to be running and receiving traffic
   - Slows down the app (not production-safe)
@@ -270,7 +270,7 @@ These tools generate OpenAPI but **require developers to add annotations, decora
 - **Supported frameworks:** Framework-agnostic (captures network traffic)
 - **Type:** SaaS platform
 - **Pricing:** Free tier available; enterprise pricing
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Traffic-based, not code-based
   - Requires running production/staging environment
   - Can only document endpoints that receive traffic
@@ -284,7 +284,7 @@ These tools generate OpenAPI but **require developers to add annotations, decora
 - **Supported frameworks:** Multiple (via SDK)
 - **Type:** SaaS platform
 - **Pricing:** Freemium; paid plans available
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Traffic-based with SDK
   - Requires running app with SDK integration
   - No static code analysis
@@ -294,7 +294,7 @@ These tools generate OpenAPI but **require developers to add annotations, decora
 
 ## 4. PARTIAL COMPETITORS -- Documentation Platforms (Take existing OpenAPI, render docs)
 
-These platforms do NOT generate OpenAPI from code. They consume an existing spec and render beautiful documentation. They are complementary to AutoDocAPI, not competitive.
+These platforms do NOT generate OpenAPI from code. They consume an existing spec and render beautiful documentation. They are complementary to ASTronaut, not competitive.
 
 ### 4.1 Bump.sh
 
@@ -303,10 +303,10 @@ These platforms do NOT generate OpenAPI from code. They consume an existing spec
 - **GitHub integration:** GitHub Action comments PRs with change digest, deploys docs on merge
 - **Type:** SaaS platform
 - **Pricing:** Free (1 API doc) / Business $700/mo / Enterprise custom
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - **Does NOT generate OpenAPI from code** -- requires an existing spec
   - Documentation rendering platform, not a spec generator
-  - **Could be complementary** -- AutoDocAPI generates the spec, Bump.sh renders it
+  - **Could be complementary** -- ASTronaut generates the spec, Bump.sh renders it
 
 ### 4.2 ReadMe
 
@@ -314,11 +314,11 @@ These platforms do NOT generate OpenAPI from code. They consume an existing spec
 - **How it works:** Import OpenAPI spec (upload, URL, GitHub sync, CLI). Renders interactive docs with "Try It" functionality. Bi-directional GitHub/GitLab sync.
 - **Type:** SaaS platform
 - **Pricing:** $100/mo base (Developer Dashboard); enterprise plans available
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Does NOT generate OpenAPI from code
   - Documentation hosting/rendering platform
   - Bi-directional sync assumes spec already exists
-  - Complementary to AutoDocAPI
+  - Complementary to ASTronaut
 
 ### 4.3 Redocly
 
@@ -327,10 +327,10 @@ These platforms do NOT generate OpenAPI from code. They consume an existing spec
 - **GitHub integration:** GitHub Action for linting and deploying docs
 - **Type:** CLI (open source) + SaaS platform
 - **Pricing:** Free (open source CLI) / paid hosted platform
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Does NOT generate OpenAPI from code
   - Linting/rendering tool, not a generator
-  - Complementary to AutoDocAPI
+  - Complementary to ASTronaut
 
 ### 4.4 Mintlify
 
@@ -339,10 +339,10 @@ These platforms do NOT generate OpenAPI from code. They consume an existing spec
 - **GitHub integration:** GitHub App for auto-deployment on push
 - **Type:** SaaS platform
 - **Pricing:** Free (Hobby) / $250-300/mo (Pro) / Enterprise
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Does NOT generate OpenAPI from code -- requires existing spec
   - Documentation site builder, not spec generator
-  - Complementary to AutoDocAPI
+  - Complementary to ASTronaut
 
 ### 4.5 Fern
 
@@ -350,10 +350,10 @@ These platforms do NOT generate OpenAPI from code. They consume an existing spec
 - **How it works:** Input OpenAPI spec, output SDKs (TypeScript, Python, Go, Java, etc.) and documentation
 - **Type:** SaaS platform + CLI
 - **Pricing:** SDKs: $250/mo per language / Docs: $400/mo
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Does NOT generate OpenAPI from code
   - Consumes spec to produce SDKs and docs
-  - Complementary to AutoDocAPI
+  - Complementary to ASTronaut
 
 ### 4.6 Speakeasy
 
@@ -362,10 +362,10 @@ These platforms do NOT generate OpenAPI from code. They consume an existing spec
 - **GitHub integration:** SDK generation GitHub Action
 - **Type:** SaaS platform + CLI
 - **Pricing:** Startup/Enterprise plans
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Does NOT generate OpenAPI from code
   - Consumes spec to produce SDKs
-  - Complementary to AutoDocAPI
+  - Complementary to ASTronaut
 
 ### 4.7 Stoplight
 
@@ -373,10 +373,10 @@ These platforms do NOT generate OpenAPI from code. They consume an existing spec
 - **How it works:** Visual editor for creating/editing OpenAPI specs. Renders interactive docs. Mocking.
 - **Type:** SaaS platform
 - **Pricing:** Free tier / paid plans
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Design-first approach (write spec manually or visually)
   - Does NOT generate OpenAPI from code
-  - Complementary to AutoDocAPI
+  - Complementary to ASTronaut
 
 ### 4.8 Scalar
 
@@ -384,9 +384,9 @@ These platforms do NOT generate OpenAPI from code. They consume an existing spec
 - **How it works:** Renders OpenAPI specs as interactive, modern documentation. Default in .NET 9 templates.
 - **Type:** Open source UI component + SaaS
 - **Pricing:** Free (open source) / paid platform
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - UI rendering only -- does NOT generate specs from code
-  - Complementary to AutoDocAPI
+  - Complementary to ASTronaut
 
 ---
 
@@ -399,9 +399,9 @@ These platforms do NOT generate OpenAPI from code. They consume an existing spec
 - **GitHub integration:** CI/CD integration
 - **Type:** CLI tool + SaaS
 - **Pricing:** Free tier / paid plans
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Does NOT generate specs -- compares existing ones
-  - Complementary to AutoDocAPI (could diff AutoDocAPI-generated specs over time)
+  - Complementary to ASTronaut (could diff ASTronaut-generated specs over time)
 
 ### 5.2 oasdiff
 
@@ -410,9 +410,9 @@ These platforms do NOT generate OpenAPI from code. They consume an existing spec
 - **GitHub integration:** GitHub Action
 - **Type:** CLI + GitHub Action
 - **Pricing:** Free / open source
-- **Key differences from AutoDocAPI:**
+- **Key differences from ASTronaut:**
   - Does NOT generate specs
-  - Complementary to AutoDocAPI
+  - Complementary to ASTronaut
 
 ---
 
@@ -431,7 +431,7 @@ These platforms do NOT generate OpenAPI from code. They consume an existing spec
 
 ## 7. COMPETITIVE MATRIX
 
-| Feature | AutoDocAPI | swagger-autogen-ast | swagger-autogen | Nestia | @nestjs/swagger | Swashbuckle | NSwag | StackHawk | Escape.tech | express-oas-generator | Levo.ai |
+| Feature | ASTronaut | swagger-autogen-ast | swagger-autogen | Nestia | @nestjs/swagger | Swashbuckle | NSwag | StackHawk | Escape.tech | express-oas-generator | Levo.ai |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | **Generation Method** | AST (external) | AST (in-project) | Pattern matching | Type analysis | Decorators | Runtime reflection | Runtime reflection | AI + code analysis | AST + AI | Runtime traffic | eBPF traffic |
 | **Zero config** | Yes | Yes | Partial | Partial | No | No | No | Yes | Yes | Partial | Yes |
@@ -450,7 +450,7 @@ These platforms do NOT generate OpenAPI from code. They consume an existing spec
 
 ---
 
-## 8. GAP ANALYSIS -- What Makes AutoDocAPI Unique
+## 8. GAP ANALYSIS -- What Makes ASTronaut Unique
 
 ### Unique combination that NO existing tool provides:
 
@@ -460,7 +460,7 @@ These platforms do NOT generate OpenAPI from code. They consume an existing spec
 
 3. **Multi-framework AST analysis without code changes** -- No tool covers Express + NestJS + ASP.NET Core from a single external service using pure AST. Existing tools are single-framework libraries that must be installed in the project.
 
-4. **External analysis (clone-parse-delete)** -- AutoDocAPI clones the repo externally, analyzes it, and deletes it. Most competitors require being installed as a dependency in the project itself.
+4. **External analysis (clone-parse-delete)** -- ASTronaut clones the repo externally, analyzes it, and deletes it. Most competitors require being installed as a dependency in the project itself.
 
 5. **Pure AST with zero annotations** -- While swagger-autogen-ast and Nestia share this philosophy for individual frameworks, no tool applies it across JS/TS and C# ecosystems.
 
@@ -481,11 +481,11 @@ Each individual piece exists. The combination does not.
 
 ### Near-term threats:
 1. **swagger-autogen-ast** could expand to NestJS support and add a GitHub Action wrapper
-2. **StackHawk/Escape.tech** could add PR-creation features (but they use AI, differentiating AutoDocAPI)
+2. **StackHawk/Escape.tech** could add PR-creation features (but they use AI, differentiating ASTronaut)
 3. **GitHub itself** could build OpenAPI extraction into GitHub Actions as a first-party feature
 4. **Bump.sh** could add code-to-spec generation (currently only spec-to-docs)
 
-### Structural advantages of AutoDocAPI:
+### Structural advantages of ASTronaut:
 1. **No AI = no hallucination** -- a strong selling point for teams that need trustworthy docs
 2. **Zero config default** -- lowest friction possible
 3. **PR-based delivery** -- fits naturally into code review workflows
@@ -503,6 +503,6 @@ Each individual piece exists. The combination does not.
 
 1. **Lead with the unique combination** in marketing -- "deploy it, document it" -- emphasize the zero-effort, zero-config, no-AI-hallucination angle
 2. **Position against annotation-based tools** -- highlight that developers don't need to change their code
-3. **Build partnerships with doc platforms** -- AutoDocAPI generates the spec, Bump.sh/Redocly/Mintlify renders it -- this is a natural pipeline
+3. **Build partnerships with doc platforms** -- ASTronaut generates the spec, Bump.sh/Redocly/Mintlify renders it -- this is a natural pipeline
 4. **Expand framework support** to create competitive moat -- FastAPI, Spring Boot, Go/Gin would significantly expand TAM
-5. **Monitor swagger-autogen-ast closely** -- it is the closest philosophical match and could evolve toward AutoDocAPI's feature set
+5. **Monitor swagger-autogen-ast closely** -- it is the closest philosophical match and could evolve toward ASTronaut's feature set

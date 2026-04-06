@@ -3,10 +3,10 @@ using System.Text.Json;
 using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
-using AutoDocAnalyzer.Models;
-using AutoDocAnalyzer.Parsers;
+using ASTronautAnalyzer.Models;
+using ASTronautAnalyzer.Parsers;
 
-namespace AutoDocAnalyzer;
+namespace ASTronautAnalyzer;
 
 public static class Program
 {
@@ -21,7 +21,7 @@ public static class Program
     {
         if (args.Length < 1)
         {
-            Console.Error.WriteLine("Usage: dotnet AutoDocAnalyzer.dll <repo-path>");
+            Console.Error.WriteLine("Usage: dotnet ASTronautAnalyzer.dll <repo-path>");
             return 1;
         }
 

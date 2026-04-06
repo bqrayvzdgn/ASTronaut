@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AutoDocAPI is a GitHub App that automatically generates OpenAPI 3.0.3 documentation from source code after every successful deploy. It listens for GitHub `workflow_run` webhooks, clones the repo, parses routes via AST analysis (no AI/LLM), and opens a PR with the generated spec. Documentation is written in Turkish in `docs/`.
+ASTronaut is a GitHub App that automatically generates OpenAPI 3.0.3 documentation from source code after every successful deploy. It listens for GitHub `workflow_run` webhooks, clones the repo, parses routes via AST analysis (no AI/LLM), and opens a PR with the generated spec. Documentation is written in Turkish in `docs/`.
 
 **Core principle:** Pure AST parsing only — no AI, no guessing. If a route isn't in the code, it doesn't appear in the spec.
 
@@ -27,7 +27,7 @@ npm run migrate:push     # Push schema to database
 
 # .NET Analyzer (requires .NET 8 SDK)
 cd analyzer && dotnet publish -c Release   # Build the C# analyzer
-dotnet analyzer/bin/Release/net8.0/AutoDocAnalyzer.dll <repo-path>  # Run standalone
+dotnet analyzer/bin/Release/net8.0/ASTronautAnalyzer.dll <repo-path>  # Run standalone
 
 # Manual parser testing
 npx ts-node scripts/test-parser.ts <repo-path> [express|nestjs|dotnet]
@@ -149,7 +149,7 @@ All parsers produce `ParseResult` (defined in `src/parser/types.ts`) containing 
 
 ## Environment
 
-Requires Node.js 20, PostgreSQL, and .NET 8 SDK (for ASP.NET analysis). Copy `.env.example` to `.env` for local development. The GitHub App needs a PEM private key file. Deployed to VPS via SSH (`pm2 restart autodocapi`).
+Requires Node.js 20, PostgreSQL, and .NET 8 SDK (for ASP.NET analysis). Copy `.env.example` to `.env` for local development. The GitHub App needs a PEM private key file. Deployed to VPS via SSH (`pm2 restart astronaut`).
 
 ## Testing
 

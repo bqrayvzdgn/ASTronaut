@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace AutoDocAnalyzer.Models;
+namespace ASTronautAnalyzer.Models;
 
 public class ParseResult
 {

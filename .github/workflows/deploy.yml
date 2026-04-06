@@ -24,11 +24,11 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd /opt/autodocapi
+            cd /opt/astronaut
             git pull origin main
             npm ci --production
             npm run build
             cd analyzer
             dotnet publish -c Release
             cd ..
-            pm2 restart autodocapi
+            pm2 restart astronaut

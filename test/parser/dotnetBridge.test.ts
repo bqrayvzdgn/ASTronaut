@@ -21,7 +21,7 @@ jest.mock("util", () => {
 // Mock config
 jest.mock("../../src/config", () => ({
   config: {
-    dotnetAnalyzerPath: "/mock/path/AutoDocAnalyzer.dll",
+    dotnetAnalyzerPath: "/mock/path/ASTronautAnalyzer.dll",
     logLevel: "silent",
     nodeEnv: "test",
   },
@@ -406,7 +406,7 @@ describe("parseDotnet", () => {
       const callArgs = __mockExecFileAsync.mock.calls[0];
       expect(callArgs[0]).toBe("dotnet");
       expect(callArgs[1]).toEqual([
-        "/mock/path/AutoDocAnalyzer.dll",
+        "/mock/path/ASTronautAnalyzer.dll",
         "/my/repo/path",
       ]);
       expect(callArgs[2]).toMatchObject({

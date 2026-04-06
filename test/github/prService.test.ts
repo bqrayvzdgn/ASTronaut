@@ -164,7 +164,7 @@ describe("prService", () => {
       expect(mockOctokit.rest.git.createRef).toHaveBeenCalledWith(
         expect.objectContaining({
           sha: "base-sha-123",
-          ref: expect.stringMatching(/^refs\/heads\/autodocapi\/docs-/),
+          ref: expect.stringMatching(/^refs\/heads\/astronaut\/docs-/),
         })
       );
     });

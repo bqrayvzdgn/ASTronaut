@@ -1,18 +1,18 @@
-# AutoDocAPI
+# ASTronaut
 
 A GitHub App that automatically generates [OpenAPI 3.0.3](https://spec.openapis.org/oas/v3.0.3) documentation from your source code after every successful deploy — powered by pure AST analysis, no AI.
 
 ## How It Works
 
 ```
-Deploy succeeds → GitHub fires webhook → AutoDocAPI clones repo
+Deploy succeeds → GitHub fires webhook → ASTronaut clones repo
   → Detects framework → Parses routes via AST → Generates OpenAPI spec
   → Opens a PR with the updated docs
 ```
 
 1. Install the GitHub App on your repositories
 2. Push to `main` and your CI/CD pipeline succeeds
-3. AutoDocAPI receives a `workflow_run` webhook, clones your repo, and analyzes the source code
+3. ASTronaut receives a `workflow_run` webhook, clones your repo, and analyzes the source code
 4. A pull request is opened with an up-to-date `docs/openapi.yaml`
 
 Your source code is **deleted from the server immediately** after analysis.
@@ -36,7 +36,7 @@ Your source code is **deleted from the server immediately** after analysis.
 
 ## Configuration
 
-AutoDocAPI works with **zero configuration**. Optionally, add a `.autodoc.yml` to your repo root:
+ASTronaut works with **zero configuration**. Optionally, add a `.autodoc.yml` to your repo root:
 
 ```yaml
 # Force framework detection (useful for monorepos)

@@ -67,7 +67,7 @@ function buildBranchName(): string {
     pad(now.getMinutes()),
     pad(now.getSeconds()),
   ].join("");
-  return `autodocapi/docs-${stamp}`;
+  return `astronaut/docs-${stamp}`;
 }
 
 /**
@@ -142,7 +142,7 @@ export async function createPR(params: CreatePRParams): Promise<CreatePRResult> 
   const token = await getValidToken(installationId);
   const octokit = new Octokit({
     auth: token,
-    userAgent: "AutoDocAPI/1.0",
+    userAgent: "ASTronaut/1.0",
   });
 
   // 2. Get default branch and its latest commit SHA
@@ -179,7 +179,7 @@ export async function createPR(params: CreatePRParams): Promise<CreatePRResult> 
     throw new Error(`Unsafe file path rejected: ${filePath}`);
   }
   const contentBase64 = Buffer.from(spec, "utf8").toString("base64");
-  const commitMessage = "docs: update API documentation (AutoDocAPI)";
+  const commitMessage = "docs: update API documentation (ASTronaut)";
 
   // Check if the file already exists on the new branch (inherited from default)
   let existingFileSha: string | undefined;
