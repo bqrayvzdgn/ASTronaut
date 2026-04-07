@@ -7,6 +7,7 @@ import { config } from "../config";
 import { logger } from "../utils/logger";
 import { db } from "../db/connection";
 import { installations } from "../db/schema";
+import { githubApiRetry } from "../utils/retryPolicy";
 
 const log = logger.child({ module: "appAuth" });
 
@@ -55,11 +56,23 @@ export function createAppOctokit(): InstanceType<typeof Octokit> {
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 /**
- * Obtain a valid installation access token for the given GitHub App
- * installation. Tokens are cached in the database and reused until they are
- * within 5 minutes of expiry, at which point a fresh one is requested.
+ * Deduplicate concurrent token fetches for the same installation.
+ * If a fetch is already in-flight, return the same promise.
  */
+const inflightTokenRequests = new Map<number, Promise<string>>();
+
 export async function getValidToken(installationId: number): Promise<string> {
+  const inflight = inflightTokenRequests.get(installationId);
+  if (inflight) return inflight;
+
+  const promise = _getValidTokenImpl(installationId).finally(() => {
+    inflightTokenRequests.delete(installationId);
+  });
+  inflightTokenRequests.set(installationId, promise);
+  return promise;
+}
+
+async function _getValidTokenImpl(installationId: number): Promise<string> {
   // 1. Check if we already have a valid token in the DB
   const [row] = await db
     .select({
@@ -91,9 +104,12 @@ export async function getValidToken(installationId: number): Promise<string> {
   const appOctokit = createAppOctokit();
   log.info({ installationId }, "Requesting new installation access token");
 
-  const response = await appOctokit.request(
-    "POST /app/installations/{installation_id}/access_tokens",
-    { installation_id: installationId }
+  const response = await githubApiRetry(
+    () => appOctokit.request(
+      "POST /app/installations/{installation_id}/access_tokens",
+      { installation_id: installationId }
+    ),
+    "fetchInstallationToken"
   );
 
   const newToken = response.data.token;

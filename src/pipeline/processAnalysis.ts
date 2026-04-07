@@ -2,7 +2,7 @@ import { Octokit } from "@octokit/rest";
 import { eq } from "drizzle-orm";
 
 import { QueueItem } from "../queue/analysisQueue";
-import { createChildLogger } from "../utils/logger";
+import { createChildLogger, logger } from "../utils/logger";
 import { config } from "../config";
 import { getValidToken } from "../github/appAuth";
 import { checkRepoPermissions, createPR } from "../github/prService";
@@ -14,18 +14,8 @@ import { db } from "../db/connection";
 import { analyses, installations, repos, webhookEvents } from "../db/schema";
 import type { ParseResult } from "../parser/types";
 
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout>;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(
-      () => reject(new Error(`${label} timed out after ${ms}ms`)),
-      ms
-    );
-  });
-  return Promise.race([promise, timeoutPromise]).finally(() =>
-    clearTimeout(timeoutId)
-  );
-}
+import { withTimeout } from "../utils/withTimeout";
+import { githubApiRetry, gitCloneRetry } from "../utils/retryPolicy";
 
 async function updateWebhookStatus(
   webhookEventId: number | undefined,
@@ -42,8 +32,8 @@ async function updateWebhookStatus(
         ...(errorMessage ? { errorMessage } : {}),
       })
       .where(eq(webhookEvents.id, webhookEventId));
-  } catch {
-    // Status tracking failure should not crash the pipeline
+  } catch (err) {
+    logger.warn({ err, webhookEventId }, "Failed to update webhook status");
   }
 }
 
@@ -75,7 +65,10 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
   // 1. Permission check
   let token: string;
   try {
-    token = await getValidToken(installationId);
+    token = await githubApiRetry(
+      () => withTimeout(getValidToken(installationId), config.timeouts.prMs, "getValidToken"),
+      "getValidToken"
+    );
   } catch (err) {
     log.error({ err }, "Failed to obtain installation token");
     throw err;
@@ -83,7 +76,10 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
 
   const octokit = new Octokit({ auth: token, userAgent: "ASTronaut/1.0" });
 
-  const permissions = await checkRepoPermissions(octokit, owner, repo);
+  const permissions = await githubApiRetry(
+    () => withTimeout(checkRepoPermissions(octokit, owner, repo), config.timeouts.prMs, "checkRepoPermissions"),
+    "checkRepoPermissions"
+  );
   if (!permissions.canPush || permissions.archived) {
     const reason = permissions.archived
       ? "repository is archived"
@@ -106,7 +102,10 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
   // 2. Clone, analyze, and create PR
   let repoPath: string | null = null;
   try {
-    repoPath = await cloneRepo(owner, repo, token);
+    repoPath = await gitCloneRetry(
+      () => cloneRepo(owner, repo, token),
+      "cloneRepo"
+    );
     await removeSensitiveFiles(repoPath);
 
     // Load optional config
@@ -127,8 +126,29 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
       "Parsing complete"
     );
 
+    // Skip PR creation if no routes were found
+    if (parseResult.routes.length === 0) {
+      log.warn("No routes found — skipping PR creation");
+      await saveAnalysis({
+        owner,
+        repo,
+        installationId,
+        commitSha,
+        status: "failed",
+        errors: parseResult.errors.length > 0
+          ? parseResult.errors
+          : [{ reason: "No routes found in the codebase" }],
+        durationMs: Date.now() - startTime,
+      });
+      await updateWebhookStatus(webhookEventId, "done");
+      return;
+    }
+
     // Resolve version from tags or short SHA
-    const version = await resolveVersion(octokit, owner, repo, commitSha);
+    const version = await githubApiRetry(
+      () => withTimeout(resolveVersion(octokit, owner, repo, commitSha), config.timeouts.prMs, "resolveVersion"),
+      "resolveVersion"
+    );
     log.info({ version }, "Resolved version");
 
     // Generate OpenAPI spec
@@ -137,20 +157,23 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
       version,
     });
 
-    // Create PR (with timeout)
+    // Create PR (with timeout + retry)
     const docsOutput = autodocConfig?.docsOutput;
-    const prResult = await withTimeout(
-      createPR({
-        owner,
-        repo,
-        installationId,
-        spec,
-        parseResult,
-        commitSha,
-        version,
-        docsOutput,
-      }),
-      config.timeouts.prMs,
+    const prResult = await githubApiRetry(
+      () => withTimeout(
+        createPR({
+          owner,
+          repo,
+          installationId,
+          spec,
+          parseResult,
+          commitSha,
+          version,
+          docsOutput,
+        }),
+        config.timeouts.prMs,
+        "createPR"
+      ),
       "createPR"
     );
 
@@ -200,6 +223,11 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
         await cleanup(repoPath);
       } catch (cleanupErr) {
         log.warn({ err: cleanupErr }, "Cleanup failed");
+        await updateWebhookStatus(
+          webhookEventId,
+          "error",
+          `Cleanup failed: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`
+        );
       }
     }
   }
@@ -244,15 +272,23 @@ async function resolveVersion(
   commitSha: string
 ): Promise<string> {
   try {
-    const { data: tags } = await octokit.rest.repos.listTags({
-      owner,
-      repo,
-      per_page: 100,
-    });
+    let page = 1;
+    const perPage = 100;
+    while (true) {
+      const { data: tags } = await octokit.rest.repos.listTags({
+        owner,
+        repo,
+        per_page: perPage,
+        page,
+      });
 
-    const matchingTag = tags.find((t) => t.commit.sha === commitSha);
-    if (matchingTag) {
-      return matchingTag.name.replace(/^v/, "");
+      const matchingTag = tags.find((t) => t.commit.sha === commitSha);
+      if (matchingTag) {
+        return matchingTag.name.replace(/^v/, "");
+      }
+
+      if (tags.length < perPage) break;
+      page++;
     }
   } catch (err) {
     // Tag fetch failure is non-fatal; fall back to short SHA
@@ -301,7 +337,7 @@ async function saveAnalysis(params: SaveAnalysisParams): Promise<void> {
               installationId: instRow.id,
               repoName: params.repo,
               repoFullName: `${params.owner}/${params.repo}`,
-              isActive: "true",
+              isActive: true,
             })
             .returning({ id: repos.id });
 
@@ -328,7 +364,6 @@ async function saveAnalysis(params: SaveAnalysisParams): Promise<void> {
       durationMs: params.durationMs,
     });
   } catch (err) {
-    // DB save failure should not crash the pipeline
-    // The PR was already created at this point
+    logger.warn({ err, commitSha: params.commitSha }, "Failed to save analysis to database");
   }
 }

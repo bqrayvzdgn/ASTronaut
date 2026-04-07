@@ -43,6 +43,18 @@ function mapType(type: string): string {
   return TYPE_MAP[type.toLowerCase()] ?? "string";
 }
 
+function extractArrayItemType(type: string): string {
+  // Handle "string[]", "number[]", "User[]"
+  const bracketMatch = type.match(/^(.+)\[\]$/);
+  if (bracketMatch) return bracketMatch[1];
+
+  // Handle "Array<string>", "Array<User>"
+  const genericMatch = type.match(/^Array<(.+)>$/i);
+  if (genericMatch) return genericMatch[1];
+
+  return "string";
+}
+
 /**
  * Strip ASP.NET route constraints from path: {id:guid} → {id}
  */
@@ -93,7 +105,8 @@ function buildPropertiesSchema(
   for (const prop of properties) {
     const mappedType = mapType(prop.type);
     if (mappedType === "array") {
-      props[prop.name] = { type: "array", items: { type: "string" } };
+      const itemType = extractArrayItemType(prop.type);
+      props[prop.name] = { type: "array", items: { type: mapType(itemType) } };
     } else {
       props[prop.name] = { type: mappedType };
     }
@@ -307,6 +320,8 @@ export function generateOpenApiSpec(
     },
   };
 
+  const usedOperationIds = new Set<string>();
+
   for (const route of parseResult.routes) {
     const pathKey = stripRouteConstraints(route.path);
     const methodKey = route.method.toLowerCase();
@@ -317,11 +332,18 @@ export function generateOpenApiSpec(
 
     const operation: Record<string, unknown> = {};
 
-    operation.operationId = buildOperationId(
+    let operationId = buildOperationId(
       route.controller,
       route.method,
       route.path
     );
+    if (usedOperationIds.has(operationId)) {
+      let counter = 2;
+      while (usedOperationIds.has(`${operationId}_${counter}`)) counter++;
+      operationId = `${operationId}_${counter}`;
+    }
+    usedOperationIds.add(operationId);
+    operation.operationId = operationId;
 
     operation.tags = [route.controller ?? "default"];
 

@@ -1,3 +1,4 @@
+import fs from "fs";
 import { Project, SourceFile, ClassDeclaration, MethodDeclaration, ParameterDeclaration, Type, Symbol as TsMorphSymbol, Decorator, ts, Node } from "ts-morph";
 import * as path from "path";
 import { ParseResult, RouteInfo, ParamInfo, RequestBodyInfo, ResponseInfo, PropertyInfo, ParseError, HttpMethod } from "./types";
@@ -30,7 +31,6 @@ export function parseNestRoutes(repoPath: string): ParseResult {
   const tsconfigPath = path.join(repoPath, "tsconfig.json");
 
   try {
-    const fs = require("fs");
     if (fs.existsSync(tsconfigPath)) {
       project = new Project({ tsConfigFilePath: tsconfigPath });
     } else {

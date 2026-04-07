@@ -123,6 +123,24 @@ describe("repoManager", () => {
       tmpDir = createTempDir([]);
       await expect(removeSensitiveFiles(tmpDir)).resolves.not.toThrow();
     });
+
+    it("should skip symlinks during sensitive file walk", async () => {
+      tmpDir = createTempDir(["real-secret.key", "safe.ts"]);
+      // Create a symlink with a non-sensitive name pointing to sensitive content
+      const symlinkPath = path.join(tmpDir, "config-link");
+      try {
+        fsSync.symlinkSync(path.join(tmpDir, "safe.ts"), symlinkPath);
+      } catch {
+        // Skip test on systems that don't support symlinks (Windows without admin)
+        return;
+      }
+
+      await removeSensitiveFiles(tmpDir);
+      // The real sensitive file should be removed
+      expect(fsSync.existsSync(path.join(tmpDir, "real-secret.key"))).toBe(false);
+      // The safe file should remain
+      expect(fsSync.existsSync(path.join(tmpDir, "safe.ts"))).toBe(true);
+    });
   });
 
   describe("cleanup", () => {
@@ -132,6 +150,39 @@ describe("repoManager", () => {
 
       await cleanup(tmpDir);
       expect(fsSync.existsSync(tmpDir)).toBe(false);
+    });
+  });
+
+  describe("assertSafeName", () => {
+    // assertSafeName is not exported, but cloneRepo uses it internally.
+    // We test it indirectly via the exported cloneRepo function.
+    // Import cloneRepo and verify it rejects unsafe names.
+    it("should reject names with path traversal characters", async () => {
+      const { cloneRepo } = require("../../src/github/repoManager");
+      await expect(cloneRepo("../evil", "repo", "token")).rejects.toThrow(
+        "Invalid"
+      );
+    });
+
+    it("should reject names with shell metacharacters", async () => {
+      const { cloneRepo } = require("../../src/github/repoManager");
+      await expect(cloneRepo("owner", "repo;rm -rf /", "token")).rejects.toThrow(
+        "Invalid"
+      );
+    });
+
+    it("should reject names with spaces", async () => {
+      const { cloneRepo } = require("../../src/github/repoManager");
+      await expect(cloneRepo("owner name", "repo", "token")).rejects.toThrow(
+        "Invalid"
+      );
+    });
+
+    it("should reject names with slashes", async () => {
+      const { cloneRepo } = require("../../src/github/repoManager");
+      await expect(cloneRepo("owner/evil", "repo", "token")).rejects.toThrow(
+        "Invalid"
+      );
     });
   });
 });

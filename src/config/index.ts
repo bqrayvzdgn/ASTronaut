@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import fs from "fs";
 import path from "path";
 
 dotenv.config();
@@ -7,12 +8,12 @@ export const config = {
   port: parseInt(process.env.PORT || "3000", 10),
   nodeEnv: process.env.NODE_ENV || "development",
 
-  databaseUrl: process.env.DATABASE_URL!,
+  databaseUrl: process.env.DATABASE_URL || "",
 
   github: {
-    appId: process.env.GITHUB_APP_ID!,
-    privateKeyPath: process.env.GITHUB_APP_PRIVATE_KEY_PATH!,
-    webhookSecret: process.env.GITHUB_WEBHOOK_SECRET!,
+    appId: process.env.GITHUB_APP_ID || "",
+    privateKeyPath: process.env.GITHUB_APP_PRIVATE_KEY_PATH || "",
+    webhookSecret: process.env.GITHUB_WEBHOOK_SECRET || "",
   },
 
   dotnetAnalyzerPath:
@@ -25,14 +26,42 @@ export const config = {
       10
     ),
     rateLimitPerHour: parseInt(process.env.RATE_LIMIT_PER_HOUR || "10", 10),
+    maxQueueSize: parseInt(process.env.MAX_QUEUE_SIZE || "100", 10),
   },
 
   timeouts: {
-    cloneMs: parseInt(process.env.CLONE_TIMEOUT_MS || "30000", 10),
-    restoreMs: parseInt(process.env.RESTORE_TIMEOUT_MS || "60000", 10),
-    parseMs: parseInt(process.env.PARSE_TIMEOUT_MS || "60000", 10),
-    prMs: parseInt(process.env.PR_TIMEOUT_MS || "15000", 10),
+    cloneMs: parseInt(process.env.CLONE_TIMEOUT_MS || "90000", 10),
+    restoreMs: parseInt(process.env.RESTORE_TIMEOUT_MS || "120000", 10),
+    parseMs: parseInt(process.env.PARSE_TIMEOUT_MS || "120000", 10),
+    prMs: parseInt(process.env.PR_TIMEOUT_MS || "30000", 10),
+    jobMs: parseInt(process.env.JOB_TIMEOUT_MS || "600000", 10),
   },
 
+  dbPoolMax: parseInt(process.env.DB_POOL_MAX || "10", 10),
   logLevel: process.env.LOG_LEVEL || "info",
 } as const;
+
+export function validateConfig(): void {
+  const required: Array<{ name: string; value: string }> = [
+    { name: "DATABASE_URL", value: config.databaseUrl },
+    { name: "GITHUB_APP_ID", value: config.github.appId },
+    { name: "GITHUB_APP_PRIVATE_KEY_PATH", value: config.github.privateKeyPath },
+    { name: "GITHUB_WEBHOOK_SECRET", value: config.github.webhookSecret },
+  ];
+
+  const missing = required.filter((r) => !r.value).map((r) => r.name);
+
+  if (missing.length > 0) {
+    console.error(
+      `FATAL: Missing required environment variables: ${missing.join(", ")}`
+    );
+    process.exit(1);
+  }
+
+  // Warn (non-fatal) if .NET analyzer DLL is missing
+  if (!fs.existsSync(config.dotnetAnalyzerPath)) {
+    console.warn(
+      `WARNING: .NET analyzer not found at ${config.dotnetAnalyzerPath}. ASP.NET analysis will fail.`
+    );
+  }
+}

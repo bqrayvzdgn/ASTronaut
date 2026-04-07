@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import path from "path";
 import { Octokit } from "@octokit/rest";
 
@@ -67,7 +68,8 @@ function buildBranchName(): string {
     pad(now.getMinutes()),
     pad(now.getSeconds()),
   ].join("");
-  return `astronaut/docs-${stamp}`;
+  const nonce = crypto.randomBytes(2).toString("hex");
+  return `astronaut/docs-${stamp}-${nonce}`;
 }
 
 /**

@@ -59,6 +59,7 @@ GitHub webhook (workflow_run.completed.success)
 |---|---|---|---|
 | Express (JS/TS) | `src/parser/expressParser.ts` | Babel (`@babel/parser` + `@babel/traverse`) | In-process |
 | NestJS | `src/parser/nestParser.ts` | ts-morph (Roslyn-like type-aware analysis) | In-process |
+| Next.js | `src/parser/nextParser.ts` | File-based routing + AST (app dir & pages dir) | In-process |
 | ASP.NET Core | `src/parser/dotnetBridge.ts` → `analyzer/` | Roslyn (MSBuildWorkspace) | Child process — .NET CLI tool outputs JSON to stdout |
 
 ### Key Design Decisions
@@ -68,7 +69,32 @@ GitHub webhook (workflow_run.completed.success)
 - **.NET analyzer** is a separate C# project (`analyzer/`) that uses Roslyn's MSBuildWorkspace for full semantic analysis. Falls back to syntax-only parsing if `dotnet restore` fails. Communicates with Node via JSON on stdout.
 - **Queue** is in-memory (not Redis/external). Debounces per-repo — if a new webhook arrives for the same repo while one is queued, the older one is replaced.
 - **Rate limiter** is an in-memory sliding window (1 hour) per repository.
+- **Next.js parser** uses file-based routing analysis — scans both `app/` directory (`route.ts` files) and `pages/` directory, handles dynamic routes (`[id]`, `[...slug]`), and extracts API route handlers.
 - **Repo config override**: users can place `.autodoc.yml` in their repo root to force framework detection or customize output path (`docs_output`).
+
+### `.autodoc.yml` Schema
+
+```yaml
+framework: express | nestjs | aspnet | nextjs   # Override auto-detection
+docs_output: docs/openapi.yaml                   # Custom output path (default: docs/openapi.yaml)
+```
+
+Path safety: `docs_output` rejects absolute paths, `..` traversal, backslashes, null bytes, and colons.
+
+### Framework Detection Priority
+
+1. `.autodoc.yml` `framework` field (if present and valid)
+2. `package.json` dependencies: `@nestjs/core` → NestJS, `next` → Next.js, `express` → Express
+3. `.csproj` with `Microsoft.AspNetCore` → ASP.NET (checks for Controllers vs Minimal API vs both)
+
+### Configurable Timeouts
+
+| Operation | Env Var | Default |
+|---|---|---|
+| Clone | `CLONE_TIMEOUT_MS` | 30s |
+| .NET restore | `RESTORE_TIMEOUT_MS` | 60s |
+| Parse | `PARSE_TIMEOUT_MS` | 60s |
+| PR creation | `PR_TIMEOUT_MS` | 15s |
 
 ### Source Layout
 
@@ -88,11 +114,11 @@ All parsers produce `ParseResult` (defined in `src/parser/types.ts`) containing 
 
 ## Git Workflow
 
-- **`prod` branch is protected.** Never commit directly to `prod`.
-- All changes must go through a feature branch: `git checkout -b feature/<name>` from `prod`.
-- Open a PR to `prod` and verify the changes work before merging.
+- **`main` is the deploy branch.** Pushes to `main` trigger CI (test → deploy to VPS).
+- All changes must go through a feature branch: `git checkout -b feature/<name>` from `main`.
+- Open a PR to `main` and verify the changes work before merging.
 - Branch naming: `feature/`, `fix/`, `chore/` prefixes.
-- Delete merged branches (both local and remote) after PR is merged. Only `prod` should remain.
+- Delete merged branches (both local and remote) after PR is merged.
 
 ## Workflow Orchestration
 
@@ -147,9 +173,18 @@ All parsers produce `ParseResult` (defined in `src/parser/types.ts`) containing 
 - **No Laziness**: Find root causes. No temporary fixes. Senior developer standards.
 - **Minimal Impact**: Changes should only touch what's necessary. Avoid introducing bugs.
 
+## API Endpoints
+
+- `GET /health` — Checks DB connectivity and .NET SDK availability. Returns 200 or 503 with detailed status.
+- `POST /webhook/github` — Receives `workflow_run` webhooks. Verifies HMAC-SHA256 signature via constant-time comparison.
+
+## CI/CD
+
+Push to `main` → GitHub Actions runs `npm test` → on success, SSH deploys to VPS (`git pull`, `npm ci --production`, `npm run build`, `dotnet publish`, `pm2 restart astronaut`). Workflow defined in `.github/workflows/deploy.yml`.
+
 ## Environment
 
-Requires Node.js 20, PostgreSQL, and .NET 8 SDK (for ASP.NET analysis). Copy `.env.example` to `.env` for local development. The GitHub App needs a PEM private key file. Deployed to VPS via SSH (`pm2 restart astronaut`).
+Requires Node.js 20, PostgreSQL, and .NET 8 SDK (for ASP.NET analysis). Copy `.env.example` to `.env` for local development. The GitHub App needs a PEM private key file. Deployed to VPS via SSH (`pm2 restart astronaut`). Key env vars: `MAX_CONCURRENT_ANALYSES` (default 3), `RATE_LIMIT_PER_HOUR` (default 10), and timeout vars (see Configurable Timeouts above).
 
 ## Testing
 

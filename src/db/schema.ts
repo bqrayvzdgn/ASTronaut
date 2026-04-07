@@ -5,6 +5,8 @@ import {
   timestamp,
   integer,
   jsonb,
+  boolean,
+  index,
 } from "drizzle-orm/pg-core";
 
 export const installations = pgTable("installations", {
@@ -24,11 +26,11 @@ export const repos = pgTable("repos", {
     .notNull(),
   repoName: text("repo_name").notNull(),
   repoFullName: text("repo_full_name").notNull(),
-  isActive: text("is_active", { enum: ["true", "false"] })
-    .notNull()
-    .default("true"),
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  repoFullNameIdx: index("repos_repo_full_name_idx").on(table.repoFullName),
+}));
 
 export const analyses = pgTable("analyses", {
   id: serial("id").primaryKey(),
@@ -45,7 +47,9 @@ export const analyses = pgTable("analyses", {
   prUrl: text("pr_url"),
   durationMs: integer("duration_ms"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  repoIdIdx: index("analyses_repo_id_idx").on(table.repoId),
+}));
 
 export const webhookEvents = pgTable("webhook_events", {
   id: serial("id").primaryKey(),

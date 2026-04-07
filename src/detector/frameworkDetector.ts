@@ -1,4 +1,5 @@
 import fs from "fs";
+import fsPromises from "fs/promises";
 import path from "path";
 import { logger } from "../utils/logger";
 
@@ -98,7 +99,7 @@ export async function detectFramework(
 
 async function findCsprojFiles(repoPath: string): Promise<string[]> {
   const results: string[] = [];
-  const entries = fs.readdirSync(repoPath, {
+  const entries = await fsPromises.readdir(repoPath, {
     withFileTypes: true,
     recursive: true,
   });
@@ -153,7 +154,7 @@ async function searchInCsFiles(
   repoPath: string,
   searchText: string
 ): Promise<boolean> {
-  const entries = fs.readdirSync(repoPath, {
+  const entries = await fsPromises.readdir(repoPath, {
     withFileTypes: true,
     recursive: true,
   });
@@ -165,7 +166,7 @@ async function searchInCsFiles(
       !entry.parentPath.includes("obj") &&
       !entry.parentPath.includes("bin")
     ) {
-      const content = fs.readFileSync(
+      const content = await fsPromises.readFile(
         path.join(entry.parentPath, entry.name),
         "utf-8"
       );

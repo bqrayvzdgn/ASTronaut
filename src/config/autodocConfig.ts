@@ -29,8 +29,14 @@ export function loadAutodocConfig(repoPath: string): AutoDocConfig | null {
 
   try {
     const content = fs.readFileSync(configPath, "utf-8");
-    const parsed = yaml.load(content) as Record<string, unknown>;
+    const raw = yaml.load(content);
 
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      logger.warn("Invalid .autodoc.yml format — expected an object, using defaults");
+      return null;
+    }
+
+    const parsed = raw as Record<string, unknown>;
     const config: AutoDocConfig = {};
 
     if (

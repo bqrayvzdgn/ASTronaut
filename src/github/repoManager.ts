@@ -103,6 +103,12 @@ async function walkDir(dir: string): Promise<string[]> {
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
+
+    // Skip symlinks entirely — they can bypass sensitive file checks
+    if (entry.isSymbolicLink()) {
+      continue;
+    }
+
     if (entry.isDirectory()) {
       // Skip .git directory entirely
       if (entry.name === ".git") continue;

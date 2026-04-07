@@ -5,6 +5,7 @@ import * as schema from "./schema";
 
 const pool = new Pool({
   connectionString: config.databaseUrl,
+  max: config.dbPoolMax,
 });
 
 export const db = drizzle(pool, { schema });

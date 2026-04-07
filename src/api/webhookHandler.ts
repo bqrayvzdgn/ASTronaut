@@ -85,6 +85,12 @@ async function handleInstallationEvent(payload: any, res: Response): Promise<voi
     return;
   }
 
+  if (!checkRateLimit(`installation:${installationId}`)) {
+    log.warn({ installationId }, "Rate limit exceeded for installation event");
+    res.status(429).json({ error: "Rate limit exceeded" });
+    return;
+  }
+
   if (action === "created") {
     log.info({ installationId, owner }, "Processing installation.created");
 
@@ -109,6 +115,12 @@ async function handleInstallationEvent(payload: any, res: Response): Promise<voi
           .from(installations)
           .where(eq(installations.githubInstallationId, installationId))
           .limit(1);
+
+        if (!existing) {
+          log.error({ installationId }, "Installation row not found after conflict");
+          res.status(500).json({ error: "Failed to process installation event" });
+          return;
+        }
         instDbId = existing.id;
       }
 
@@ -122,7 +134,7 @@ async function handleInstallationEvent(payload: any, res: Response): Promise<voi
             installationId: instDbId,
             repoName: r.name,
             repoFullName: r.full_name,
-            isActive: "true" as const,
+            isActive: true,
           }))
         );
       }
@@ -187,6 +199,12 @@ async function handleInstallationRepositoriesEvent(
     return;
   }
 
+  if (!checkRateLimit(`installation:${installationId}`)) {
+    log.warn({ installationId }, "Rate limit exceeded for repository event");
+    res.status(429).json({ error: "Rate limit exceeded" });
+    return;
+  }
+
   try {
     // Look up installation internal ID
     const [instRow] = await db
@@ -214,7 +232,7 @@ async function handleInstallationRepositoriesEvent(
             installationId: instRow.id,
             repoName: r.name,
             repoFullName: r.full_name,
-            isActive: "true" as const,
+            isActive: true,
           }))
         );
       }
@@ -263,9 +281,15 @@ async function handleWorkflowRunEvent(
     return;
   }
 
-  // Rate limit check
-  const repoFullName: string = payload.repository.full_name;
+  // Validate required payload fields
+  const repoFullName: string | undefined = payload.repository?.full_name;
+  if (!repoFullName || typeof repoFullName !== "string") {
+    log.warn("Missing repository.full_name in workflow_run payload");
+    res.status(400).json({ error: "Malformed payload" });
+    return;
+  }
 
+  // Rate limit check
   if (!checkRateLimit(repoFullName)) {
     log.warn({ repo: repoFullName }, "Rate limit exceeded");
     res.status(429).json({ error: "Rate limit exceeded for this repository" });
@@ -301,7 +325,13 @@ async function handleWorkflowRunEvent(
     webhookEventId,
   };
 
-  analysisQueue.enqueue(item);
+  const enqueued = analysisQueue.enqueue(item);
+
+  if (!enqueued) {
+    log.warn({ repo: repoFullName }, "Queue at capacity — rejecting request");
+    res.status(503).json({ error: "Server busy, try again later" });
+    return;
+  }
 
   log.info({ repo: repoFullName, queueItemId: item.id }, "Analysis enqueued");
   res.status(202).json({ queued: true, id: item.id });

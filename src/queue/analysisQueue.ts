@@ -1,5 +1,6 @@
 import { config } from "../config";
 import { logger } from "../utils/logger";
+import { withTimeout } from "../utils/withTimeout";
 
 export interface QueueItem {
   id: string;
@@ -11,21 +12,26 @@ export interface QueueItem {
 
 type ProcessFn = (item: QueueItem) => Promise<void>;
 
-class AnalysisQueue {
+export class AnalysisQueue {
   private queue: QueueItem[] = [];
   private activeJobs = new Map<string, Promise<void>>();
   private processFn: ProcessFn | null = null;
   private maxConcurrent: number;
+  private maxQueueSize: number;
+  private jobTimeoutMs: number;
+  private drainResolvers: Array<() => void> = [];
 
   constructor() {
     this.maxConcurrent = config.limits.maxConcurrentAnalyses;
+    this.maxQueueSize = config.limits.maxQueueSize;
+    this.jobTimeoutMs = config.timeouts.jobMs;
   }
 
   setProcessor(fn: ProcessFn): void {
     this.processFn = fn;
   }
 
-  enqueue(item: QueueItem): void {
+  enqueue(item: QueueItem): boolean {
     // Debounce: remove any pending item for the same repo
     const existingIdx = this.queue.findIndex(
       (q) => q.repoFullName === item.repoFullName
@@ -38,6 +44,15 @@ class AnalysisQueue {
       this.queue.splice(existingIdx, 1);
     }
 
+    // Reject if queue is at capacity
+    if (this.queue.length >= this.maxQueueSize) {
+      logger.warn(
+        { repo: item.repoFullName, queueLength: this.queue.length },
+        "Queue at capacity — rejecting item"
+      );
+      return false;
+    }
+
     this.queue.push(item);
     logger.info(
       { repo: item.repoFullName, queueLength: this.queue.length },
@@ -45,6 +60,7 @@ class AnalysisQueue {
     );
 
     this.processNext();
+    return true;
   }
 
   isRepoActive(repoFullName: string): boolean {
@@ -57,6 +73,17 @@ class AnalysisQueue {
 
   getActiveCount(): number {
     return this.activeJobs.size;
+  }
+
+  /**
+   * Returns a promise that resolves when all active jobs have completed.
+   * Used for graceful shutdown.
+   */
+  drain(): Promise<void> {
+    if (this.activeJobs.size === 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      this.drainResolvers.push(resolve);
+    });
   }
 
   private async processNext(): Promise<void> {
@@ -74,13 +101,24 @@ class AnalysisQueue {
 
     childLogger.info("Starting analysis");
 
-    const job = this.processFn(item)
+    const job = withTimeout(
+      this.processFn(item),
+      this.jobTimeoutMs,
+      `job:${item.repoFullName}`
+    )
       .catch((err) => {
         childLogger.error({ err }, "Analysis failed");
       })
       .finally(() => {
         this.activeJobs.delete(item.repoFullName);
         childLogger.info("Analysis slot freed");
+
+        // Notify drain waiters if queue is empty
+        if (this.activeJobs.size === 0) {
+          for (const resolve of this.drainResolvers) resolve();
+          this.drainResolvers = [];
+        }
+
         this.processNext();
       });
 

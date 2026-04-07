@@ -102,7 +102,7 @@ export async function parseDotnet(repoPath: string): Promise<ParseResult> {
       errors: [
         {
           file: repoPath,
-          reason: `Analyzer error: ${stderrOutput}`,
+          reason: `Analyzer error: ${truncate(stderrOutput, MAX_LOG_OUTPUT)}`,
         },
       ],
     };

@@ -28,7 +28,7 @@ jest.mock("../../src/utils/logger", () => ({
   },
 }));
 
-const mockEnqueue = jest.fn();
+const mockEnqueue = jest.fn().mockReturnValue(true);
 jest.mock("../../src/queue/analysisQueue", () => ({
   analysisQueue: { enqueue: mockEnqueue },
   QueueItem: {},

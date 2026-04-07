@@ -114,4 +114,45 @@ app.Run();`
     // Empty directory — no package.json, no .csproj
     await expect(detectFramework(tmpDir)).rejects.toThrow();
   });
+
+  it("should detect Next.js from package.json dependencies", async () => {
+    writePackageJson(tmpDir, { next: "^14.0.0" });
+
+    const result = await detectFramework(tmpDir);
+    expect(result).toBe(Framework.NEXTJS);
+  });
+
+  it("should detect ASP.NET Both when Controllers and Minimal API patterns coexist", async () => {
+    // Create .csproj with ASP.NET Core reference
+    const csprojContent = `<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup>
+  <ItemGroup><PackageReference Include="Microsoft.AspNetCore.OpenApi" /></ItemGroup>
+</Project>`;
+    fs.writeFileSync(path.join(tmpDir, "MyApi.csproj"), csprojContent);
+
+    // Create Controllers directory
+    fs.mkdirSync(path.join(tmpDir, "Controllers"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, "Controllers", "WeatherController.cs"),
+      "[ApiController] public class WeatherController {}"
+    );
+
+    // Create Program.cs with Minimal API patterns
+    fs.writeFileSync(
+      path.join(tmpDir, "Program.cs"),
+      `var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+app.MapGet("/hello", () => "Hello World");
+app.Run();`
+    );
+
+    const result = await detectFramework(tmpDir);
+    expect(result).toBe(Framework.ASPNET_BOTH);
+  });
+
+  it("should handle malformed package.json gracefully", async () => {
+    fs.writeFileSync(path.join(tmpDir, "package.json"), "{ invalid json }}}");
+    // Should not throw; should fall through and eventually throw "no framework found"
+    await expect(detectFramework(tmpDir)).rejects.toThrow();
+  });
 });
