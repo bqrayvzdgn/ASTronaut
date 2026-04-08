@@ -1,5 +1,7 @@
+import "../parser/modules";
 import { and, eq, lt, or } from "drizzle-orm";
 import { analysisQueue, QueueItem } from "../queue/analysisQueue";
+import type { WorkflowRunPayload } from "../api/webhookHandler";
 import { processAnalysis } from "./processAnalysis";
 import { logger } from "../utils/logger";
 import { db } from "../db/connection";
@@ -34,7 +36,7 @@ export async function initializePipeline(): Promise<void> {
       );
 
       for (const event of staleEvents) {
-        const payload = event.payload as any;
+        const payload = event.payload as WorkflowRunPayload;
         const repoFullName =
           event.repoFullName || payload?.repository?.full_name;
         if (!repoFullName) continue;

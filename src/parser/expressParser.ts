@@ -1,4 +1,5 @@
 import fs from "fs";
+import fsPromises from "fs/promises";
 import path from "path";
 import * as babelParser from "@babel/parser";
 import _traverse from "@babel/traverse";
@@ -49,20 +50,26 @@ const EXCLUDED_DIRS = new Set([
   "dist",
   "build",
   "test",
+  "tests",
   "__tests__",
+  "coverage",
+  ".nyc_output",
+  "e2e",
+  "fixtures",
+  "mocks",
 ]);
 
 // ---------------------------------------------------------------------------
 // File discovery
 // ---------------------------------------------------------------------------
 
-function collectSourceFiles(rootDir: string): string[] {
+async function collectSourceFiles(rootDir: string): Promise<string[]> {
   const results: string[] = [];
 
-  function walk(dir: string): void {
+  async function walk(dir: string): Promise<void> {
     let entries: fs.Dirent[];
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
+      entries = await fsPromises.readdir(dir, { withFileTypes: true });
     } catch {
       return;
     }
@@ -70,7 +77,7 @@ function collectSourceFiles(rootDir: string): string[] {
     for (const entry of entries) {
       if (entry.isDirectory()) {
         if (!EXCLUDED_DIRS.has(entry.name)) {
-          walk(path.join(dir, entry.name));
+          await walk(path.join(dir, entry.name));
         }
       } else if (entry.isFile()) {
         const name = entry.name;
@@ -88,7 +95,7 @@ function collectSourceFiles(rootDir: string): string[] {
     }
   }
 
-  walk(rootDir);
+  await walk(rootDir);
   return results;
 }
 
@@ -458,15 +465,15 @@ export async function parseExpressRoutes(
   const routes: RouteInfo[] = [];
   const errors: ParseError[] = [];
 
-  const files = collectSourceFiles(rootDir);
+  const files = await collectSourceFiles(rootDir);
   logger.info({ fileCount: files.length, rootDir }, "Scanning Express routes");
 
   // Pre-scan: build cross-file mount map (import var → source file, mount prefix)
-  const mountMap = buildMountMap(rootDir, files);
+  const mountMap = await buildMountMap(rootDir, files);
 
   for (const filePath of files) {
     try {
-      const code = fs.readFileSync(filePath, "utf-8");
+      const code = await fsPromises.readFile(filePath, "utf-8");
       const relativePath = path.relative(rootDir, filePath).replace(/\\/g, "/");
       parseFile(code, relativePath, routes, errors);
     } catch (err: any) {
@@ -491,11 +498,11 @@ export async function parseExpressRoutes(
 /**
  * Resolve a require/import path to an actual file path.
  */
-function resolveModulePath(
+async function resolveModulePath(
   importPath: string,
   fromFile: string,
   rootDir: string
-): string | null {
+): Promise<string | null> {
   if (!importPath.startsWith(".")) return null; // skip node_modules
 
   const fromDir = path.dirname(path.join(rootDir, fromFile));
@@ -508,8 +515,13 @@ function resolveModulePath(
   ];
 
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
-      return path.relative(rootDir, candidate).replace(/\\/g, "/");
+    try {
+      const stat = await fsPromises.stat(candidate);
+      if (stat.isFile()) {
+        return path.relative(rootDir, candidate).replace(/\\/g, "/");
+      }
+    } catch {
+      // File doesn't exist, try next candidate
     }
   }
   return null;
@@ -524,16 +536,16 @@ interface MountInfo {
  * Pre-scan files to find app.use('/prefix', importedRouter) patterns
  * and resolve import paths to actual file paths.
  */
-function buildMountMap(
+async function buildMountMap(
   rootDir: string,
   files: string[]
-): MountInfo[] {
+): Promise<MountInfo[]> {
   const mounts: MountInfo[] = [];
 
   for (const filePath of files) {
     let code: string;
     try {
-      code = fs.readFileSync(filePath, "utf-8");
+      code = await fsPromises.readFile(filePath, "utf-8");
     } catch {
       continue;
     }
@@ -550,8 +562,8 @@ function buildMountMap(
       continue;
     }
 
-    // Track: importVar → relative module path
-    const importMap = new Map<string, string>();
+    // Collect raw import paths: varName → raw import path
+    const rawImports = new Map<string, string>();
 
     traverse(ast, {
       // const userRouter = require('./routes/users')
@@ -566,12 +578,7 @@ function buildMountMap(
           init.callee.name === "require" &&
           init.arguments?.[0]?.type === "StringLiteral"
         ) {
-          const resolved = resolveModulePath(
-            init.arguments[0].value,
-            relativePath,
-            rootDir
-          );
-          if (resolved) importMap.set(id.name, resolved);
+          rawImports.set(id.name, init.arguments[0].value);
         }
       },
 
@@ -579,16 +586,21 @@ function buildMountMap(
       ImportDeclaration(p: any) {
         const source = p.node.source?.value;
         if (!source) return;
-        const resolved = resolveModulePath(source, relativePath, rootDir);
-        if (!resolved) return;
 
         for (const spec of p.node.specifiers ?? []) {
           if (spec.local?.type === "Identifier") {
-            importMap.set(spec.local.name, resolved);
+            rawImports.set(spec.local.name, source);
           }
         }
       },
     });
+
+    // Resolve import paths asynchronously
+    const importMap = new Map<string, string>();
+    for (const [varName, importPath] of rawImports) {
+      const resolved = await resolveModulePath(importPath, relativePath, rootDir);
+      if (resolved) importMap.set(varName, resolved);
+    }
 
     // Find app.use('/prefix', importedVar) patterns
     traverse(ast, {

@@ -139,7 +139,7 @@ describe("prService", () => {
       const result = await createPR({
         owner: "owner",
         repo: "repo",
-        installationId: 123,
+        token: "mock-token",
         spec: "openapi: 3.0.3",
         parseResult: sampleParseResult,
         commitSha: "abc1234567890",
@@ -154,7 +154,7 @@ describe("prService", () => {
       await createPR({
         owner: "owner",
         repo: "repo",
-        installationId: 123,
+        token: "mock-token",
         spec: "spec",
         parseResult: emptyParseResult,
         commitSha: "abc1234",
@@ -173,7 +173,7 @@ describe("prService", () => {
       await createPR({
         owner: "owner",
         repo: "repo",
-        installationId: 123,
+        token: "mock-token",
         spec: "spec",
         parseResult: emptyParseResult,
         commitSha: "abc1234",
@@ -193,7 +193,7 @@ describe("prService", () => {
         createPR({
           owner: "owner",
           repo: "repo",
-          installationId: 123,
+          token: "mock-token",
           spec: "spec",
           parseResult: emptyParseResult,
           commitSha: "abc1234",
@@ -211,7 +211,7 @@ describe("prService", () => {
       await createPR({
         owner: "owner",
         repo: "repo",
-        installationId: 123,
+        token: "mock-token",
         spec: "spec",
         parseResult: emptyParseResult,
         commitSha: "abc1234",

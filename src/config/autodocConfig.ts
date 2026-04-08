@@ -1,10 +1,10 @@
-import fs from "fs";
+import fsPromises from "fs/promises";
 import path from "path";
 import yaml from "js-yaml";
 import { logger } from "../utils/logger";
 
 export interface AutoDocConfig {
-  framework?: "express" | "nestjs" | "aspnet" | "nextjs";
+  framework?: string;
   docsOutput?: string;
 }
 
@@ -19,16 +19,18 @@ function isPathSafe(p: string): boolean {
   );
 }
 
-export function loadAutodocConfig(repoPath: string): AutoDocConfig | null {
+export async function loadAutodocConfig(repoPath: string): Promise<AutoDocConfig | null> {
   const configPath = path.join(repoPath, ".autodoc.yml");
 
-  if (!fs.existsSync(configPath)) {
+  try {
+    await fsPromises.access(configPath);
+  } catch {
     logger.info("No .autodoc.yml found, using defaults");
     return null;
   }
 
   try {
-    const content = fs.readFileSync(configPath, "utf-8");
+    const content = await fsPromises.readFile(configPath, "utf-8");
     const raw = yaml.load(content);
 
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
@@ -39,11 +41,8 @@ export function loadAutodocConfig(repoPath: string): AutoDocConfig | null {
     const parsed = raw as Record<string, unknown>;
     const config: AutoDocConfig = {};
 
-    if (
-      typeof parsed.framework === "string" &&
-      ["express", "nestjs", "aspnet", "nextjs"].includes(parsed.framework)
-    ) {
-      config.framework = parsed.framework as AutoDocConfig["framework"];
+    if (typeof parsed.framework === "string" && parsed.framework.trim()) {
+      config.framework = parsed.framework.trim();
     }
 
     if (typeof parsed.docs_output === "string") {

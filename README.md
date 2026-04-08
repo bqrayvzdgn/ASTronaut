@@ -22,8 +22,8 @@ Your source code is **deleted from the server immediately** after analysis.
 | Language | Framework | Parser |
 |---|---|---|
 | JavaScript / TypeScript | **Express** | Babel (`@babel/parser` + `@babel/traverse`) |
-| TypeScript | **NestJS** | ts-morph (decorator-based extraction) |
 | C# | **ASP.NET Core** (Controllers + Minimal API) | Roslyn (`MSBuildWorkspace`) |
+| Go | **Gin** | Go AST (`go/parser` + `go/ast`) |
 
 ### What Gets Detected
 
@@ -31,8 +31,8 @@ Your source code is **deleted from the server immediately** after analysis.
 - Path, query, and header parameters (with types from TypeScript generics and decorators)
 - Request body schemas
 - Response types
-- Auth middleware / guards (`@UseGuards`, `passport.authenticate`, etc.)
-- JSDoc / XML doc descriptions
+- Auth middleware / guards (`passport.authenticate`, Gin middleware, etc.)
+- JSDoc / XML doc / Go comments descriptions
 
 ## Configuration
 
@@ -40,7 +40,7 @@ ASTronaut works with **zero configuration**. Optionally, add a `.autodoc.yml` to
 
 ```yaml
 # Force framework detection (useful for monorepos)
-framework: express  # express | nestjs | aspnet
+framework: express  # express | aspnet | gin (or any registry-supported framework)
 
 # Custom output path for the generated spec (default: docs/openapi.yaml)
 docs_output: api/openapi.yaml
@@ -52,8 +52,9 @@ docs_output: api/openapi.yaml
 |---|---|
 | Runtime | Node.js 20 |
 | Backend | Express 4.x + TypeScript 5.x |
-| AST (JS/TS) | Babel + ts-morph |
+| AST (JS/TS) | Babel |
 | AST (C#) | Roslyn (.NET 8 CLI tool) |
+| AST (Go) | Go standard library (`go/parser` + `go/ast`) |
 | Database | PostgreSQL 16 + Drizzle ORM |
 | GitHub API | Octokit (`@octokit/rest`) |
 | Logging | Pino |
@@ -67,6 +68,7 @@ docs_output: api/openapi.yaml
 - Node.js 20+
 - PostgreSQL
 - .NET 8 SDK (for ASP.NET analysis)
+- Go 1.21+ (for Gin analysis)
 
 ### Getting Started
 
@@ -115,7 +117,7 @@ npm run migrate:push     # Apply schema to DB
 ### Testing a Parser Locally
 
 ```bash
-npx ts-node scripts/test-parser.ts /path/to/repo [express|nestjs|dotnet]
+npx ts-node scripts/test-parser.ts /path/to/repo [express|aspnet|gin]
 ```
 
 ## Branch Strategy

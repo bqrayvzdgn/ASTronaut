@@ -31,96 +31,88 @@ describe("autodocConfig", () => {
     }
   });
 
-  it("should return null when no .autodoc.yml exists", () => {
+  it("should return null when no .autodoc.yml exists", async () => {
     tmpDir = createTempRepo({});
-    expect(loadAutodocConfig(tmpDir)).toBeNull();
+    expect(await loadAutodocConfig(tmpDir)).toBeNull();
   });
 
-  it("should parse valid framework config", () => {
+  it("should parse valid framework config", async () => {
     tmpDir = createTempRepo({
       ".autodoc.yml": "framework: express\n",
     });
-    const config = loadAutodocConfig(tmpDir);
+    const config = await loadAutodocConfig(tmpDir);
     expect(config?.framework).toBe("express");
   });
 
-  it("should accept nextjs as valid framework", () => {
+  it("should accept any string as framework (validated by registry)", async () => {
     tmpDir = createTempRepo({
-      ".autodoc.yml": "framework: nextjs\n",
+      ".autodoc.yml": "framework: gin\n",
     });
-    const config = loadAutodocConfig(tmpDir);
-    expect(config?.framework).toBe("nextjs");
+    const config = await loadAutodocConfig(tmpDir);
+    expect(config?.framework).toBe("gin");
   });
 
-  it("should accept nestjs as valid framework", () => {
-    tmpDir = createTempRepo({
-      ".autodoc.yml": "framework: nestjs\n",
-    });
-    const config = loadAutodocConfig(tmpDir);
-    expect(config?.framework).toBe("nestjs");
-  });
-
-  it("should accept aspnet as valid framework", () => {
+  it("should accept aspnet as valid framework", async () => {
     tmpDir = createTempRepo({
       ".autodoc.yml": "framework: aspnet\n",
     });
-    const config = loadAutodocConfig(tmpDir);
+    const config = await loadAutodocConfig(tmpDir);
     expect(config?.framework).toBe("aspnet");
   });
 
-  it("should ignore unknown framework values", () => {
+  it("should ignore empty framework values", async () => {
     tmpDir = createTempRepo({
-      ".autodoc.yml": "framework: django\n",
+      ".autodoc.yml": "framework: \n",
     });
-    const config = loadAutodocConfig(tmpDir);
+    const config = await loadAutodocConfig(tmpDir);
     expect(config?.framework).toBeUndefined();
   });
 
-  it("should parse docs_output", () => {
+  it("should parse docs_output", async () => {
     tmpDir = createTempRepo({
       ".autodoc.yml": "docs_output: api/spec.yaml\n",
     });
-    const config = loadAutodocConfig(tmpDir);
+    const config = await loadAutodocConfig(tmpDir);
     expect(config?.docsOutput).toBe("api/spec.yaml");
   });
 
-  it("should reject path traversal in docs_output", () => {
+  it("should reject path traversal in docs_output", async () => {
     tmpDir = createTempRepo({
       ".autodoc.yml": "docs_output: ../../.github/workflows/evil.yml\n",
     });
-    const config = loadAutodocConfig(tmpDir);
+    const config = await loadAutodocConfig(tmpDir);
     expect(config?.docsOutput).toBeUndefined();
   });
 
-  it("should reject absolute path in docs_output", () => {
+  it("should reject absolute path in docs_output", async () => {
     tmpDir = createTempRepo({
       ".autodoc.yml": "docs_output: /etc/passwd\n",
     });
-    const config = loadAutodocConfig(tmpDir);
+    const config = await loadAutodocConfig(tmpDir);
     expect(config?.docsOutput).toBeUndefined();
   });
 
-  it("should reject parent directory traversal in docs_output", () => {
+  it("should reject parent directory traversal in docs_output", async () => {
     tmpDir = createTempRepo({
       ".autodoc.yml": "docs_output: docs/../../../etc/passwd\n",
     });
-    const config = loadAutodocConfig(tmpDir);
+    const config = await loadAutodocConfig(tmpDir);
     expect(config?.docsOutput).toBeUndefined();
   });
 
-  it("should return null for invalid YAML", () => {
+  it("should return null for invalid YAML", async () => {
     tmpDir = createTempRepo({
       ".autodoc.yml": ": invalid: yaml: [[[",
     });
-    const config = loadAutodocConfig(tmpDir);
+    const config = await loadAutodocConfig(tmpDir);
     expect(config).toBeNull();
   });
 
-  it("should parse both framework and docs_output together", () => {
+  it("should parse both framework and docs_output together", async () => {
     tmpDir = createTempRepo({
       ".autodoc.yml": "framework: express\ndocs_output: docs/api.yaml\n",
     });
-    const config = loadAutodocConfig(tmpDir);
+    const config = await loadAutodocConfig(tmpDir);
     expect(config?.framework).toBe("express");
     expect(config?.docsOutput).toBe("docs/api.yaml");
   });

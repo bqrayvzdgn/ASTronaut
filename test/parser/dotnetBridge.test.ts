@@ -22,6 +22,7 @@ jest.mock("util", () => {
 jest.mock("../../src/config", () => ({
   config: {
     dotnetAnalyzerPath: "/mock/path/ASTronautAnalyzer.dll",
+    timeouts: { parseMs: 60000 },
     logLevel: "silent",
     nodeEnv: "test",
   },

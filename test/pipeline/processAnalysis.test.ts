@@ -46,16 +46,11 @@ jest.mock("../../src/github/repoManager", () => ({
 }));
 
 jest.mock("../../src/config/autodocConfig", () => ({
-  loadAutodocConfig: jest.fn().mockReturnValue(null),
+  loadAutodocConfig: jest.fn().mockResolvedValue(null),
 }));
 
-jest.mock("../../src/detector/frameworkDetector", () => ({
-  detectFramework: jest.fn().mockResolvedValue("EXPRESS"),
-  Framework: { EXPRESS: "EXPRESS" },
-}));
-
-jest.mock("../../src/parser/expressParser", () => ({
-  parseExpressRoutes: jest.fn().mockResolvedValue({
+jest.mock("../../src/parser/registry", () => ({
+  detectAndParse: jest.fn().mockResolvedValue({
     routes: [{ path: "/api/test", method: "GET", controller: null, routePrefix: null, params: [], requestBody: null, responses: [], auth: null, middleware: [], description: null, source: "test.ts" }],
     errors: [],
   }),

@@ -8,7 +8,8 @@ export async function healthHandler(_req: Request, res: Response) {
     checkDotnetSdk(),
   ]);
 
-  const status = dbOk && dotnetOk ? "ok" : "error";
+  // Only DB health is required; .NET SDK is informational (optional analyzer)
+  const status = dbOk ? "ok" : "error";
   const statusCode = status === "ok" ? 200 : 503;
 
   res.status(statusCode).json({
@@ -17,7 +18,7 @@ export async function healthHandler(_req: Request, res: Response) {
     timestamp: new Date().toISOString(),
     checks: {
       database: dbOk ? "ok" : "error",
-      dotnetSdk: dotnetOk ? "ok" : "error",
+      dotnetSdk: dotnetOk ? "ok" : "unavailable",
     },
   });
 }

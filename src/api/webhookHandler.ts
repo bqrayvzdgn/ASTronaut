@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import crypto from "crypto";
-import { eq } from "drizzle-orm";
+import { eq, and, ne, sql } from "drizzle-orm";
 
 import { config } from "../config";
 import { logger } from "../utils/logger";
@@ -8,6 +8,30 @@ import { checkRateLimit } from "../utils/rateLimiter";
 import { analysisQueue, QueueItem } from "../queue/analysisQueue";
 import { db } from "../db/connection";
 import { webhookEvents, installations, repos } from "../db/schema";
+
+// ---------------------------------------------------------------------------
+// Webhook payload types
+// ---------------------------------------------------------------------------
+
+export interface WorkflowRunPayload {
+  action?: string;
+  repository?: { owner?: { login?: string }; name?: string; full_name?: string };
+  installation?: { id?: number };
+  workflow_run?: { id?: number; head_sha?: string; conclusion?: string };
+}
+
+export interface InstallationPayload {
+  action?: string;
+  installation?: { id?: number; account?: { login?: string } };
+  repositories?: Array<{ full_name: string; name: string }>;
+}
+
+export interface InstallationRepositoriesPayload {
+  action?: string;
+  installation?: { id?: number };
+  repositories_added?: Array<{ full_name: string; name: string }>;
+  repositories_removed?: Array<{ full_name: string; name: string }>;
+}
 
 const log = logger.child({ module: "webhookHandler" });
 
@@ -32,7 +56,7 @@ function verifySignature(rawBody: Buffer, signatureHeader: string): boolean {
 export async function webhookHandler(req: Request, res: Response): Promise<void> {
   // 1. Verify signature
   const signatureHeader = req.headers["x-hub-signature-256"] as string | undefined;
-  const rawBody: Buffer | undefined = (req as any).rawBody;
+  const rawBody: Buffer | undefined = req.rawBody;
 
   if (!signatureHeader || !rawBody) {
     log.warn("Missing signature header or raw body");
@@ -52,15 +76,15 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
 
   switch (eventType) {
     case "installation":
-      await handleInstallationEvent(payload, res);
+      await handleInstallationEvent(payload as InstallationPayload, res);
       return;
 
     case "installation_repositories":
-      await handleInstallationRepositoriesEvent(payload, res);
+      await handleInstallationRepositoriesEvent(payload as InstallationRepositoriesPayload, res);
       return;
 
     case "workflow_run":
-      await handleWorkflowRunEvent(eventType, payload, res);
+      await handleWorkflowRunEvent(eventType, payload as WorkflowRunPayload, res);
       return;
 
     default:
@@ -74,7 +98,7 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
  * Handle installation.created and installation.deleted events.
  * Creates or removes installation and repo rows in the database.
  */
-async function handleInstallationEvent(payload: any, res: Response): Promise<void> {
+async function handleInstallationEvent(payload: InstallationPayload, res: Response): Promise<void> {
   const action = payload.action;
   const installationId: number | undefined = payload.installation?.id;
   const owner: string | undefined = payload.installation?.account?.login;
@@ -129,14 +153,17 @@ async function handleInstallationEvent(payload: any, res: Response): Promise<voi
         payload.repositories ?? [];
 
       if (repositories.length > 0) {
-        await db.insert(repos).values(
-          repositories.map((r) => ({
-            installationId: instDbId,
-            repoName: r.name,
-            repoFullName: r.full_name,
-            isActive: true,
-          }))
-        );
+        await db
+          .insert(repos)
+          .values(
+            repositories.map((r) => ({
+              installationId: instDbId,
+              repoName: r.name,
+              repoFullName: r.full_name,
+              isActive: true,
+            }))
+          )
+          .onConflictDoNothing();
       }
 
       log.info(
@@ -187,7 +214,7 @@ async function handleInstallationEvent(payload: any, res: Response): Promise<voi
  * Handle installation_repositories.added and installation_repositories.removed events.
  */
 async function handleInstallationRepositoriesEvent(
-  payload: any,
+  payload: InstallationRepositoriesPayload,
   res: Response
 ): Promise<void> {
   const action = payload.action;
@@ -227,14 +254,17 @@ async function handleInstallationRepositoriesEvent(
         payload.repositories_added ?? [];
 
       if (added.length > 0) {
-        await db.insert(repos).values(
-          added.map((r) => ({
-            installationId: instRow.id,
-            repoName: r.name,
-            repoFullName: r.full_name,
-            isActive: true,
-          }))
-        );
+        await db
+          .insert(repos)
+          .values(
+            added.map((r) => ({
+              installationId: instRow.id,
+              repoName: r.name,
+              repoFullName: r.full_name,
+              isActive: true,
+            }))
+          )
+          .onConflictDoNothing();
       }
 
       log.info({ installationId, count: added.length }, "Repositories added");
@@ -263,7 +293,7 @@ async function handleInstallationRepositoriesEvent(
  */
 async function handleWorkflowRunEvent(
   eventType: string,
-  payload: any,
+  payload: WorkflowRunPayload,
   res: Response
 ): Promise<void> {
   if (payload.action !== "completed") {
@@ -294,6 +324,33 @@ async function handleWorkflowRunEvent(
     log.warn({ repo: repoFullName }, "Rate limit exceeded");
     res.status(429).json({ error: "Rate limit exceeded for this repository" });
     return;
+  }
+
+  // Idempotency: skip if this workflow_run was already processed
+  const workflowRunId = payload.workflow_run?.id;
+  if (workflowRunId) {
+    try {
+      const [existing] = await db
+        .select({ id: webhookEvents.id })
+        .from(webhookEvents)
+        .where(
+          and(
+            eq(webhookEvents.repoFullName, repoFullName),
+            eq(webhookEvents.eventType, "workflow_run"),
+            ne(webhookEvents.processed, "error"),
+            sql`${webhookEvents.payload}->'workflow_run'->>'id' = ${String(workflowRunId)}`
+          )
+        )
+        .limit(1);
+
+      if (existing) {
+        log.info({ repo: repoFullName, workflowRunId }, "Duplicate webhook — already processed");
+        res.status(200).json({ ignored: true, reason: "already processed" });
+        return;
+      }
+    } catch (err) {
+      log.warn({ err, repo: repoFullName }, "Failed idempotency check — continuing");
+    }
   }
 
   // Save webhook event to DB and capture ID for status tracking

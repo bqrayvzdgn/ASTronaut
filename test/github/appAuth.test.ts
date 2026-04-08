@@ -1,13 +1,23 @@
-const mockSign = jest.fn().mockReturnValue("mock-jwt-token");
 const mockReadFileSync = jest.fn().mockReturnValue("mock-private-key");
 
 jest.mock("fs", () => ({
   readFileSync: mockReadFileSync,
 }));
 
-jest.mock("jsonwebtoken", () => ({
-  sign: mockSign,
-}));
+// Mock jose — importPKCS8 returns a fake key, SignJWT builds a chainable that produces a token
+const mockSign = jest.fn().mockResolvedValue("mock-jwt-token");
+jest.mock("jose", () => {
+  const signInstance = {
+    setProtectedHeader: jest.fn().mockReturnThis(),
+    setIssuedAt: jest.fn().mockReturnThis(),
+    setExpirationTime: jest.fn().mockReturnThis(),
+    sign: mockSign,
+  };
+  return {
+    importPKCS8: jest.fn().mockResolvedValue("mock-key-object"),
+    SignJWT: jest.fn().mockImplementation(() => signInstance),
+  };
+});
 
 jest.mock("../../src/config", () => ({
   config: {
@@ -16,6 +26,7 @@ jest.mock("../../src/config", () => ({
       privateKeyPath: "/test/key.pem",
       webhookSecret: "test-secret",
     },
+    userAgent: "ASTronaut/1.0.0",
   },
 }));
 
@@ -64,39 +75,34 @@ jest.mock("@octokit/rest", () => ({
 }));
 
 import { createAppOctokit, getValidToken } from "../../src/github/appAuth";
+import { SignJWT } from "jose";
 
 describe("appAuth", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockReadFileSync.mockReturnValue("mock-private-key");
-    mockSign.mockReturnValue("mock-jwt-token");
+    mockSign.mockResolvedValue("mock-jwt-token");
   });
 
   describe("createAppOctokit", () => {
-    it("should create an Octokit instance with JWT auth", () => {
-      const octokit = createAppOctokit();
+    it("should create an Octokit instance with JWT auth", async () => {
+      const octokit = await createAppOctokit();
       expect(octokit).toBeDefined();
-      expect(mockSign).toHaveBeenCalledWith(
-        expect.objectContaining({
-          iss: "12345",
-        }),
-        "mock-private-key",
-        { algorithm: "RS256" }
+      expect(SignJWT).toHaveBeenCalledWith(
+        expect.objectContaining({ iss: "12345" })
       );
     });
 
-    it("should create JWT with iat backdated 60s and exp within 10 min window", () => {
-      createAppOctokit();
-
-      const payload = mockSign.mock.calls[0][0];
-      expect(payload.exp - payload.iat).toBeLessThanOrEqual(600);
-      expect(payload.exp - payload.iat).toBeGreaterThan(0);
+    it("should use RS256 algorithm", async () => {
+      await createAppOctokit();
+      const instance = (SignJWT as unknown as jest.Mock).mock.results[0].value;
+      expect(instance.setProtectedHeader).toHaveBeenCalledWith({ alg: "RS256" });
     });
   });
 
   describe("getValidToken", () => {
     it("should reuse cached token when not near expiry", async () => {
-      const futureDate = new Date(Date.now() + 30 * 60 * 1000); // 30 min from now
+      const futureDate = new Date(Date.now() + 30 * 60 * 1000);
       mockSelectLimit.mockResolvedValueOnce([{
         accessToken: "cached-token",
         tokenExpiresAt: futureDate,
@@ -108,7 +114,7 @@ describe("appAuth", () => {
     });
 
     it("should refresh token when near expiry", async () => {
-      const nearExpiry = new Date(Date.now() + 2 * 60 * 1000); // 2 min from now (< 5 min buffer)
+      const nearExpiry = new Date(Date.now() + 2 * 60 * 1000);
       mockSelectLimit.mockResolvedValueOnce([{
         accessToken: "old-token",
         tokenExpiresAt: nearExpiry,
@@ -142,7 +148,7 @@ describe("appAuth", () => {
 
       const token = await getValidToken(456);
       expect(token).toBe("fresh-token");
-      expect(mockInsert).toHaveBeenCalled(); // upsert fallback
+      expect(mockInsert).toHaveBeenCalled();
     });
   });
 });

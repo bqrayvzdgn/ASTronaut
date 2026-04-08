@@ -4,6 +4,12 @@ import path from "path";
 
 dotenv.config();
 
+// Read version from package.json for user-agent string
+const packageJsonPath = path.resolve(__dirname, "../../package.json");
+const packageVersion: string = fs.existsSync(packageJsonPath)
+  ? (JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as { version: string }).version
+  : "1.0.0";
+
 export const config = {
   port: parseInt(process.env.PORT || "3000", 10),
   nodeEnv: process.env.NODE_ENV || "development",
@@ -18,7 +24,11 @@ export const config = {
 
   dotnetAnalyzerPath:
     process.env.DOTNET_ANALYZER_PATH ||
-    path.resolve("./analyzer/bin/Release/net8.0/ASTronautAnalyzer.dll"),
+    path.resolve("./analyzers/dotnet/bin/Release/net8.0/ASTronautAnalyzer.dll"),
+
+  ginAnalyzerPath:
+    process.env.GIN_ANALYZER_PATH ||
+    path.resolve("./analyzers/gin/bin/gin-analyzer"),
 
   limits: {
     maxConcurrentAnalyses: parseInt(
@@ -36,6 +46,8 @@ export const config = {
     prMs: parseInt(process.env.PR_TIMEOUT_MS || "30000", 10),
     jobMs: parseInt(process.env.JOB_TIMEOUT_MS || "600000", 10),
   },
+
+  userAgent: `ASTronaut/${packageVersion}`,
 
   dbPoolMax: parseInt(process.env.DB_POOL_MAX || "10", 10),
   logLevel: process.env.LOG_LEVEL || "info",
@@ -62,6 +74,13 @@ export function validateConfig(): void {
   if (!fs.existsSync(config.dotnetAnalyzerPath)) {
     console.warn(
       `WARNING: .NET analyzer not found at ${config.dotnetAnalyzerPath}. ASP.NET analysis will fail.`
+    );
+  }
+
+  // Warn (non-fatal) if Gin analyzer binary is missing
+  if (!fs.existsSync(config.ginAnalyzerPath)) {
+    console.warn(
+      `WARNING: Gin analyzer not found at ${config.ginAnalyzerPath}. Gin analysis will fail.`
     );
   }
 }

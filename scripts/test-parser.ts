@@ -1,14 +1,14 @@
 /**
  * Standalone parser test script.
- * Usage: npx ts-node scripts/test-parser.ts <repoPath> [express|nestjs|dotnet]
+ * Usage: npx ts-node scripts/test-parser.ts <repoPath> [express|aspnet|gin]
  *
  * Example:
  *   npx ts-node scripts/test-parser.ts ../my-express-app express
  */
 import path from "path";
-import { detectFramework } from "../src/detector/frameworkDetector";
+import "../src/parser/modules";
+import { detectAndParse, getFrameworkModule } from "../src/parser/registry";
 import { generateOpenApiSpec } from "../src/generator/openApiGenerator";
-import type { ParseResult } from "../src/parser/types";
 
 async function main() {
   const repoPath = path.resolve(process.argv[2] || ".");
@@ -16,39 +16,20 @@ async function main() {
 
   console.log(`\n📂 Repo: ${repoPath}`);
 
-  // Detect or use forced framework
-  const framework = forceFramework || (await detectFramework(repoPath, null));
-  console.log(`🔍 Framework: ${framework}\n`);
+  const autodocConfig = forceFramework ? { framework: forceFramework } : null;
 
-  // Parse
-  let parseResult: ParseResult;
-  switch (framework) {
-    case "express": {
-      const { parseExpressRoutes } = await import("../src/parser/expressParser");
-      parseResult = await parseExpressRoutes(repoPath);
-      break;
-    }
-    case "nestjs": {
-      const { parseNestRoutes } = await import("../src/parser/nestParser");
-      parseResult = parseNestRoutes(repoPath);
-      break;
-    }
-    case "nextjs": {
-      const { parseNextRoutes } = await import("../src/parser/nextParser");
-      parseResult = await parseNextRoutes(repoPath);
-      break;
-    }
-    case "aspnet-controller":
-    case "aspnet-minimal":
-    case "aspnet-both": {
-      const { parseDotnet } = await import("../src/parser/dotnetBridge");
-      parseResult = await parseDotnet(repoPath);
-      break;
-    }
-    default:
-      console.error(`Unknown framework: ${framework}`);
+  if (forceFramework) {
+    const mod = getFrameworkModule(forceFramework);
+    if (!mod) {
+      console.error(`Unknown framework: ${forceFramework}`);
       process.exit(1);
+    }
+    console.log(`🔍 Framework: ${mod.name} (forced)\n`);
+  } else {
+    console.log(`🔍 Framework: auto-detect\n`);
   }
+
+  const parseResult = await detectAndParse(repoPath, autodocConfig);
 
   // Summary
   console.log(`✅ Routes found: ${parseResult.routes.length}`);

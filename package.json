@@ -3,10 +3,14 @@
   "version": "1.0.0",
   "description": "Automatically generate OpenAPI documentation from source code after every successful deploy",
   "main": "dist/app.js",
+  "bin": {
+    "astronaut": "./dist/cli/index.js"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/app.js",
     "dev": "ts-node src/app.ts",
+    "cli": "ts-node src/cli/index.ts",
     "test": "jest",
     "test:coverage": "jest --coverage",
     "migrate:generate": "drizzle-kit generate",
@@ -15,24 +19,21 @@
   "dependencies": {
     "@babel/parser": "^7.25.0",
     "@babel/traverse": "^7.25.0",
-    "@octokit/app": "^15.1.0",
     "@octokit/rest": "^21.0.0",
     "dotenv": "^16.4.0",
     "drizzle-orm": "^0.33.0",
     "express": "^4.21.0",
+    "jose": "^6.2.2",
     "js-yaml": "^4.1.0",
-    "jsonwebtoken": "^9.0.0",
     "pg": "^8.13.0",
     "pino": "^9.4.0",
-    "pino-http": "^10.3.0",
-    "ts-morph": "^24.0.0"
+    "pino-http": "^10.3.0"
   },
   "devDependencies": {
     "@types/babel__traverse": "^7.20.0",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.0",
     "@types/js-yaml": "^4.0.9",
-    "@types/jsonwebtoken": "^9.0.0",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.11.0",
     "drizzle-kit": "^0.24.0",

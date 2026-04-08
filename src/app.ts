@@ -16,7 +16,7 @@ const app = express();
 app.use(
   express.json({
     verify: (req: express.Request, _res, buf) => {
-      (req as any).rawBody = buf;
+      req.rawBody = buf;
     },
   })
 );
@@ -36,16 +36,29 @@ const DRAIN_TIMEOUT_MS = 30_000;
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, "Shutdown signal received — draining");
 
-  server.close();
+  await new Promise<void>((resolve) => server.close(() => resolve()));
 
   // Wait for active jobs to finish (with timeout)
   const drainPromise = analysisQueue.drain();
-  const timeout = new Promise<void>((resolve) =>
-    setTimeout(resolve, DRAIN_TIMEOUT_MS)
+  const timeoutPromise = new Promise<"timeout">((resolve) =>
+    setTimeout(() => resolve("timeout"), DRAIN_TIMEOUT_MS)
   );
-  await Promise.race([drainPromise, timeout]);
+  const result = await Promise.race([
+    drainPromise.then(() => "drained" as const),
+    timeoutPromise,
+  ]);
+
+  if (result === "timeout") {
+    logger.warn(
+      { activeJobs: analysisQueue.getActiveCount(), queueLength: analysisQueue.getQueueLength() },
+      "Drain timeout reached — forcing shutdown with active jobs"
+    );
+  }
 
   clearEvictionInterval();
+
+  // Brief grace period for in-flight DB writes from finishing jobs
+  await new Promise((resolve) => setTimeout(resolve, 1000));
   await closeDatabase();
 
   logger.info("Shutdown complete");

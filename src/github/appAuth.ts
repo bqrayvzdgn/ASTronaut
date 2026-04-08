@@ -1,5 +1,5 @@
 import fs from "fs";
-import jwt from "jsonwebtoken";
+import { SignJWT, importPKCS8 } from "jose";
 import { Octokit } from "@octokit/rest";
 import { eq } from "drizzle-orm";
 
@@ -23,29 +23,39 @@ function getPrivateKey(): string {
   return cachedPrivateKey;
 }
 
+let cachedPrivateKeyObject: Awaited<ReturnType<typeof importPKCS8>> | null = null;
+
+async function getPrivateKeyObject() {
+  if (cachedPrivateKeyObject) return cachedPrivateKeyObject;
+  const pem = getPrivateKey();
+  cachedPrivateKeyObject = await importPKCS8(pem, "RS256");
+  return cachedPrivateKeyObject;
+}
+
 /**
  * Create a short-lived JWT for authenticating as the GitHub App itself.
  * JWTs are valid for a maximum of 10 minutes per GitHub's spec.
  */
-function createAppJwt(): string {
+async function createAppJwt(): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  const payload = {
-    iat: now - 60, // issued 60s in the past to account for clock drift
-    exp: now + 9 * 60, // 9 min from now; total window = 10 min with 60s IAT backdate
-    iss: config.github.appId,
-  };
-  return jwt.sign(payload, getPrivateKey(), { algorithm: "RS256" });
+  const privateKey = await getPrivateKeyObject();
+
+  return new SignJWT({ iss: config.github.appId })
+    .setProtectedHeader({ alg: "RS256" })
+    .setIssuedAt(now - 60)       // 60s in the past for clock drift
+    .setExpirationTime(now + 9 * 60) // 9 min from now
+    .sign(privateKey);
 }
 
 /**
  * Return an Octokit instance authenticated as the GitHub App (not an installation).
  * Use this for app-level endpoints such as listing installations.
  */
-export function createAppOctokit(): InstanceType<typeof Octokit> {
-  const token = createAppJwt();
+export async function createAppOctokit(): Promise<InstanceType<typeof Octokit>> {
+  const token = await createAppJwt();
   return new Octokit({
     auth: token,
-    userAgent: "ASTronaut/1.0",
+    userAgent: config.userAgent,
   });
 }
 
@@ -101,7 +111,7 @@ async function _getValidTokenImpl(installationId: number): Promise<string> {
   }
 
   // 2. Request a fresh installation access token from GitHub
-  const appOctokit = createAppOctokit();
+  const appOctokit = await createAppOctokit();
   log.info({ installationId }, "Requesting new installation access token");
 
   const response = await githubApiRetry(

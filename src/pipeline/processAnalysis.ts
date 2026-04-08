@@ -8,14 +8,14 @@ import { getValidToken } from "../github/appAuth";
 import { checkRepoPermissions, createPR } from "../github/prService";
 import { cloneRepo, removeSensitiveFiles, cleanup } from "../github/repoManager";
 import { loadAutodocConfig } from "../config/autodocConfig";
-import { detectFramework, Framework } from "../detector/frameworkDetector";
+import { detectAndParse } from "../parser/registry";
 import { generateOpenApiSpec } from "../generator/openApiGenerator";
 import { db } from "../db/connection";
 import { analyses, installations, repos, webhookEvents } from "../db/schema";
-import type { ParseResult } from "../parser/types";
 
 import { withTimeout } from "../utils/withTimeout";
 import { githubApiRetry, gitCloneRetry } from "../utils/retryPolicy";
+import type { WorkflowRunPayload } from "../api/webhookHandler";
 
 async function updateWebhookStatus(
   webhookEventId: number | undefined,
@@ -38,7 +38,7 @@ async function updateWebhookStatus(
 }
 
 export async function processAnalysis(item: QueueItem): Promise<void> {
-  const payload = item.payload as any;
+  const payload = item.payload as WorkflowRunPayload;
   const webhookEventId = item.webhookEventId;
 
   const owner: string | undefined = payload?.repository?.owner?.login;
@@ -74,7 +74,7 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
     throw err;
   }
 
-  const octokit = new Octokit({ auth: token, userAgent: "ASTronaut/1.0" });
+  const octokit = new Octokit({ auth: token, userAgent: config.userAgent });
 
   const permissions = await githubApiRetry(
     () => withTimeout(checkRepoPermissions(octokit, owner, repo), config.timeouts.prMs, "checkRepoPermissions"),
@@ -109,17 +109,13 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
     await removeSensitiveFiles(repoPath);
 
     // Load optional config
-    const autodocConfig = loadAutodocConfig(repoPath);
+    const autodocConfig = await loadAutodocConfig(repoPath);
 
-    // Detect framework
-    const framework = await detectFramework(repoPath, autodocConfig);
-    log.info({ framework }, "Framework detected");
-
-    // Parse based on framework (with timeout)
+    // Detect framework and parse routes
     const parseResult = await withTimeout(
-      parseByFramework(framework, repoPath),
+      detectAndParse(repoPath, autodocConfig),
       config.timeouts.parseMs,
-      "parseByFramework"
+      "detectAndParse"
     );
     log.info(
       { routeCount: parseResult.routes.length, errorCount: parseResult.errors.length },
@@ -164,7 +160,7 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
         createPR({
           owner,
           repo,
-          installationId,
+          token,
           spec,
           parseResult,
           commitSha,
@@ -223,44 +219,7 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
         await cleanup(repoPath);
       } catch (cleanupErr) {
         log.warn({ err: cleanupErr }, "Cleanup failed");
-        await updateWebhookStatus(
-          webhookEventId,
-          "error",
-          `Cleanup failed: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`
-        );
       }
-    }
-  }
-
-  const durationMs = Date.now() - startTime;
-  log.info({ durationMs }, "Analysis pipeline completed");
-}
-
-async function parseByFramework(
-  framework: Framework,
-  repoPath: string
-): Promise<ParseResult> {
-  switch (framework) {
-    case Framework.EXPRESS: {
-      const { parseExpressRoutes } = await import("../parser/expressParser");
-      return parseExpressRoutes(repoPath);
-    }
-    case Framework.NESTJS: {
-      const { parseNestRoutes } = await import("../parser/nestParser");
-      return parseNestRoutes(repoPath);
-    }
-    case Framework.NEXTJS: {
-      const { parseNextRoutes } = await import("../parser/nextParser");
-      return parseNextRoutes(repoPath);
-    }
-    case Framework.ASPNET_CONTROLLER:
-    case Framework.ASPNET_MINIMAL:
-    case Framework.ASPNET_BOTH: {
-      const { parseDotnet } = await import("../parser/dotnetBridge");
-      return parseDotnet(repoPath);
-    }
-    default: {
-      throw new Error(`Unsupported framework: ${framework}`);
     }
   }
 }
@@ -271,10 +230,11 @@ async function resolveVersion(
   repo: string,
   commitSha: string
 ): Promise<string> {
+  const MAX_TAG_PAGES = 5;
   try {
     let page = 1;
     const perPage = 100;
-    while (true) {
+    while (page <= MAX_TAG_PAGES) {
       const { data: tags } = await octokit.rest.repos.listTags({
         owner,
         repo,
@@ -291,7 +251,7 @@ async function resolveVersion(
       page++;
     }
   } catch (err) {
-    // Tag fetch failure is non-fatal; fall back to short SHA
+    logger.debug({ err, owner, repo }, "Tag fetch failed, using commit SHA");
   }
 
   return commitSha.substring(0, 7);

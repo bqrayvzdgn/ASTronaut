@@ -2,7 +2,6 @@ import crypto from "crypto";
 import path from "path";
 import { Octokit } from "@octokit/rest";
 
-import { getValidToken } from "./appAuth";
 import { config } from "../config";
 import { logger } from "../utils/logger";
 import type { ParseResult } from "../parser/types";
@@ -17,7 +16,7 @@ export interface RepoPermissions {
 export interface CreatePRParams {
   owner: string;
   repo: string;
-  installationId: number;
+  token: string;
   spec: string;
   parseResult: ParseResult;
   commitSha: string;
@@ -136,15 +135,13 @@ function buildPRBody(
  * 5. Open a pull request back to the default branch
  */
 export async function createPR(params: CreatePRParams): Promise<CreatePRResult> {
-  const { owner, repo, installationId, spec, parseResult, commitSha, version, docsOutput } = params;
+  const { owner, repo, token, spec, parseResult, commitSha, version, docsOutput } = params;
 
   log.info({ owner, repo, commitSha, version }, "Starting PR creation");
 
-  // 1. Authenticate
-  const token = await getValidToken(installationId);
   const octokit = new Octokit({
     auth: token,
-    userAgent: "ASTronaut/1.0",
+    userAgent: config.userAgent,
   });
 
   // 2. Get default branch and its latest commit SHA

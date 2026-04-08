@@ -80,7 +80,7 @@ export class AnalysisQueue {
    * Used for graceful shutdown.
    */
   drain(): Promise<void> {
-    if (this.activeJobs.size === 0) return Promise.resolve();
+    if (this.activeJobs.size === 0 && this.queue.length === 0) return Promise.resolve();
     return new Promise((resolve) => {
       this.drainResolvers.push(resolve);
     });
@@ -113,8 +113,8 @@ export class AnalysisQueue {
         this.activeJobs.delete(item.repoFullName);
         childLogger.info("Analysis slot freed");
 
-        // Notify drain waiters if queue is empty
-        if (this.activeJobs.size === 0) {
+        // Notify drain waiters if queue and active jobs are both empty
+        if (this.activeJobs.size === 0 && this.queue.length === 0) {
           for (const resolve of this.drainResolvers) resolve();
           this.drainResolvers = [];
         }
