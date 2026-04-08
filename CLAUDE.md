@@ -127,11 +127,8 @@ All parsers produce `ParseResult` (defined in `src/parser/types.ts`) containing 
 
 ## Git Workflow
 
-- **`main` is the deploy branch.** Pushes to `main` trigger CI (test → deploy to VPS).
-- All changes must go through a feature branch: `git checkout -b feature/<name>` from `main`.
-- Open a PR to `main` and verify the changes work before merging.
-- Branch naming: `feature/`, `fix/`, `chore/` prefixes.
-- Delete merged branches (both local and remote) after PR is merged.
+- **Şu an:** Tüm değişiklikler direkt `main`'e push ediliyor. Proje oturana kadar bu şekilde devam.
+- **Hedef:** Proje stabilize olunca `main` → `dev` → `feature/fix/chore` branch stratejisine geçilecek.
 
 ## Workflow Orchestration
 
