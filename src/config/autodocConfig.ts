@@ -12,7 +12,7 @@ function isPathSafe(p: string): boolean {
   const normalized = path.posix.normalize(p);
   return (
     !normalized.startsWith("..") &&
-    !path.isAbsolute(normalized) &&
+    !path.posix.isAbsolute(normalized) &&
     !p.includes("\\") &&
     !p.includes("\0") &&
     !p.includes(":")

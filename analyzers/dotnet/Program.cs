@@ -50,7 +50,12 @@ public static class Program
             }
 
             // Try MSBuild workspace first (requires dotnet restore)
-            var restoreSucceeded = await TryDotnetRestore(repoPath, result);
+            var restoreTimeoutSeconds = 60;
+            if (args.Length >= 2 && int.TryParse(args[1], out var parsedTimeout) && parsedTimeout > 0)
+            {
+                restoreTimeoutSeconds = parsedTimeout;
+            }
+            var restoreSucceeded = await TryDotnetRestore(repoPath, result, restoreTimeoutSeconds);
 
             if (restoreSucceeded)
             {
@@ -86,7 +91,7 @@ public static class Program
             .ToArray();
     }
 
-    private static async Task<bool> TryDotnetRestore(string repoPath, ParseResult result)
+    private static async Task<bool> TryDotnetRestore(string repoPath, ParseResult result, int restoreTimeoutSeconds = 60)
     {
         try
         {
@@ -105,7 +110,7 @@ public static class Program
             if (process == null)
                 return false;
 
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(restoreTimeoutSeconds));
 
             try
             {
@@ -114,7 +119,7 @@ public static class Program
             catch (OperationCanceledException)
             {
                 try { process.Kill(entireProcessTree: true); } catch { }
-                Console.Error.WriteLine("dotnet restore timed out after 60 seconds");
+                Console.Error.WriteLine($"dotnet restore timed out after {restoreTimeoutSeconds} seconds");
                 return false;
             }
 

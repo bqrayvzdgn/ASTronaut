@@ -7,6 +7,7 @@ import {
   jsonb,
   boolean,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const installations = pgTable("installations", {
@@ -29,7 +30,7 @@ export const repos = pgTable("repos", {
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
-  repoFullNameIdx: index("repos_repo_full_name_idx").on(table.repoFullName),
+  repoFullNameIdx: uniqueIndex("repos_repo_full_name_idx").on(table.repoFullName),
 }));
 
 export const analyses = pgTable("analyses", {

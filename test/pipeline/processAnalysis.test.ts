@@ -3,6 +3,7 @@ jest.mock("../../src/config", () => ({
     github: { appId: "test", privateKeyPath: "/test.pem", webhookSecret: "secret" },
     timeouts: { cloneMs: 30000, parseMs: 60000, prMs: 15000 },
     limits: { maxConcurrentAnalyses: 3, rateLimitPerHour: 10 },
+    userAgent: "ASTronaut-test/1.0.0",
   },
 }));
 

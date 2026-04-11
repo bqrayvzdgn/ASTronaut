@@ -22,7 +22,7 @@ jest.mock("util", () => {
 jest.mock("../../src/config", () => ({
   config: {
     dotnetAnalyzerPath: "/mock/path/ASTronautAnalyzer.dll",
-    timeouts: { parseMs: 60000 },
+    timeouts: { parseMs: 60000, restoreMs: 120000 },
     logLevel: "silent",
     nodeEnv: "test",
   },
@@ -409,6 +409,7 @@ describe("parseDotnet", () => {
       expect(callArgs[1]).toEqual([
         "/mock/path/ASTronautAnalyzer.dll",
         "/my/repo/path",
+        "120",
       ]);
       expect(callArgs[2]).toMatchObject({
         timeout: 60000, // config.timeouts.parseMs default

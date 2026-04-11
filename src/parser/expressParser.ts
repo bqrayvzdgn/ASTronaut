@@ -79,7 +79,7 @@ async function collectSourceFiles(rootDir: string): Promise<string[]> {
         if (!EXCLUDED_DIRS.has(entry.name)) {
           await walk(path.join(dir, entry.name));
         }
-      } else if (entry.isFile()) {
+      } else if (entry.isFile()) { // symlinks return false here — intentional for security
         const name = entry.name;
         if (
           (name.endsWith(".ts") || name.endsWith(".js")) &&
@@ -266,17 +266,19 @@ function extractRequestBody(handlerNode: Node): RequestBodyInfo | null {
  * Wrap a node in a minimal Program so `traverse` can walk it.
  */
 function wrapInProgram(node: Node): any {
+  // FunctionDeclarations are statements, not expressions — wrapping them
+  // in ExpressionStatement creates invalid AST.
+  const bodyNode =
+    node.type === "FunctionDeclaration"
+      ? node
+      : { type: "ExpressionStatement", expression: node };
+
   return {
     type: "File",
     program: {
       type: "Program",
       sourceType: "module",
-      body: [
-        {
-          type: "ExpressionStatement",
-          expression: node,
-        },
-      ],
+      body: [bodyNode],
     },
   };
 }
@@ -567,10 +569,11 @@ async function buildMountMap(
 
     traverse(ast, {
       // const userRouter = require('./routes/users')
+      // const { Router } = require('express')
       VariableDeclarator(p: any) {
         const init = p.node.init;
         const id = p.node.id;
-        if (!init || id?.type !== "Identifier") return;
+        if (!init) return;
 
         if (
           init.type === "CallExpression" &&
@@ -578,7 +581,18 @@ async function buildMountMap(
           init.callee.name === "require" &&
           init.arguments?.[0]?.type === "StringLiteral"
         ) {
-          rawImports.set(id.name, init.arguments[0].value);
+          if (id?.type === "Identifier") {
+            rawImports.set(id.name, init.arguments[0].value);
+          } else if (id?.type === "ObjectPattern") {
+            for (const prop of id.properties ?? []) {
+              if (
+                prop.type === "ObjectProperty" &&
+                prop.value?.type === "Identifier"
+              ) {
+                rawImports.set(prop.value.name, init.arguments[0].value);
+              }
+            }
+          }
         }
       },
 
@@ -644,27 +658,55 @@ function applyMountPrefixes(
 ): void {
   if (mounts.length === 0) return;
 
-  // Build source file → prefix map
-  const prefixBySource = new Map<string, string>();
+  // Build source file → prefixes map (supports multiple mounts)
+  const prefixesBySource = new Map<string, string[]>();
   for (const mount of mounts) {
-    // If multiple mounts for same file, use the first one
-    if (!prefixBySource.has(mount.sourceFile)) {
-      prefixBySource.set(mount.sourceFile, mount.prefix);
+    const existing = prefixesBySource.get(mount.sourceFile);
+    if (existing) {
+      if (!existing.includes(mount.prefix)) {
+        existing.push(mount.prefix);
+      }
+    } else {
+      prefixesBySource.set(mount.sourceFile, [mount.prefix]);
     }
   }
 
-  for (const route of routes) {
-    const prefix = prefixBySource.get(route.source);
-    if (prefix && !route.path.startsWith(prefix)) {
-      // Avoid double slashes
-      const cleanPrefix = prefix.endsWith("/") ? prefix.slice(0, -1) : prefix;
-      const cleanPath = route.path.startsWith("/") ? route.path : "/" + route.path;
-      route.path = cleanPrefix + cleanPath;
+  const additionalRoutes: RouteInfo[] = [];
 
-      // Also set routePrefix if not already set
-      if (!route.routePrefix) {
-        route.routePrefix = prefix;
-      }
+  for (const route of routes) {
+    const prefixes = prefixesBySource.get(route.source);
+    if (!prefixes || prefixes.length === 0) continue;
+
+    // Apply first prefix to the existing route
+    const [firstPrefix, ...restPrefixes] = prefixes;
+    applyPrefix(route, firstPrefix);
+
+    // Duplicate route for additional prefixes
+    for (const prefix of restPrefixes) {
+      const cloned: RouteInfo = {
+        ...route,
+        path: route.path.replace(firstPrefix, ""),
+        routePrefix: null,
+        params: [...route.params],
+        middleware: [...route.middleware],
+        responses: [...route.responses],
+      };
+      applyPrefix(cloned, prefix);
+      additionalRoutes.push(cloned);
+    }
+  }
+
+  routes.push(...additionalRoutes);
+}
+
+function applyPrefix(route: RouteInfo, prefix: string): void {
+  if (prefix && !route.path.startsWith(prefix)) {
+    const cleanPrefix = prefix.endsWith("/") ? prefix.slice(0, -1) : prefix;
+    const cleanPath = route.path.startsWith("/") ? route.path : "/" + route.path;
+    route.path = cleanPrefix + cleanPath;
+
+    if (!route.routePrefix) {
+      route.routePrefix = prefix;
     }
   }
 }
@@ -874,6 +916,18 @@ function parseFile(
 
       const args = node.arguments;
       if (args.length < 1) return;
+
+      // Single-argument call with a non-path argument is middleware
+      // registration (e.g., app.get(handler)), not a route definition
+      if (args.length === 1) {
+        const onlyArg = args[0];
+        if (
+          onlyArg.type !== "StringLiteral" &&
+          !(onlyArg.type === "TemplateLiteral" && onlyArg.quasis?.length === 1)
+        ) {
+          return;
+        }
+      }
 
       // First arg should be the route path
       const pathArg = args[0];

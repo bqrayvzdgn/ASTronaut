@@ -149,6 +149,27 @@ export async function runExternalAnalyzer(cfg: ExternalAnalyzerConfig): Promise<
       };
     }
     parsed = JSON.parse(trimmed) as ExternalParseResult;
+
+    // Validate shape of parsed output
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.routes)) {
+      logger.error(
+        { repoPath, output: truncate(stdout, MAX_LOG_OUTPUT) },
+        `Invalid ${label} analyzer output: missing routes array`
+      );
+      return {
+        routes: [],
+        errors: [
+          {
+            file: repoPath,
+            reason: "Analyzer returned invalid output structure (expected { routes: [...] })",
+          },
+        ],
+      };
+    }
+
+    if (parsed.errors && !Array.isArray(parsed.errors)) {
+      parsed.errors = [];
+    }
   } catch {
     logger.error(
       { repoPath, stdout: truncate(stdout, MAX_LOG_OUTPUT) },

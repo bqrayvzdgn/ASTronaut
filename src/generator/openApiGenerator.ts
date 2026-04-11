@@ -84,6 +84,7 @@ function buildOperationId(
     })
     .join("");
 
+  // HTTP method is included to ensure uniqueness across GET/POST/etc. for same path
   return `${method.toLowerCase()}${controllerPart}${pathPart}`;
 }
 

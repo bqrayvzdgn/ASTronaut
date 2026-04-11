@@ -10,13 +10,14 @@ interface RequestRecord {
 const store = new Map<string, RequestRecord>();
 
 export function checkRateLimit(repoFullName: string): boolean {
+  const key = `analysis:${repoFullName}`;
   const now = Date.now();
   const maxRequests = config.limits.rateLimitPerHour;
 
-  let record = store.get(repoFullName);
+  let record = store.get(key);
   if (!record) {
     record = { timestamps: [now] };
-    store.set(repoFullName, record);
+    store.set(key, record);
     return true;
   }
 
@@ -25,9 +26,9 @@ export function checkRateLimit(repoFullName: string): boolean {
 
   // Evict empty entries to prevent memory leak over time
   if (record.timestamps.length === 0) {
-    store.delete(repoFullName);
+    store.delete(key);
     record = { timestamps: [now] };
-    store.set(repoFullName, record);
+    store.set(key, record);
     return true;
   }
 

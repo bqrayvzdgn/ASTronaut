@@ -7,7 +7,7 @@ export async function parseDotnet(repoPath: string): Promise<ParseResult> {
 
   return runExternalAnalyzer({
     command: "dotnet",
-    args: [analyzerDllPath, repoPath],
+    args: [analyzerDllPath, repoPath, String(Math.floor(config.timeouts.restoreMs / 1000))],
     label: ".NET",
     timeoutMs: config.timeouts.parseMs,
     repoPath,

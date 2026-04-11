@@ -1,3 +1,8 @@
+/**
+ * Race a promise against a timeout. Does not cancel the underlying promise
+ * on timeout — it continues executing in the background. Callers needing
+ * true cancellation should use AbortController or their own mechanisms.
+ */
 export function withTimeout<T>(
   promise: Promise<T>,
   ms: number,

@@ -4,6 +4,12 @@ import path from "path";
 
 dotenv.config();
 
+function parseIntOrDefault(val: string | undefined, defaultVal: number): number {
+  if (val === undefined || val === "") return defaultVal;
+  const parsed = parseInt(val, 10);
+  return Number.isNaN(parsed) ? defaultVal : parsed;
+}
+
 // Read version from package.json for user-agent string
 const packageJsonPath = path.resolve(__dirname, "../../package.json");
 const packageVersion: string = fs.existsSync(packageJsonPath)
@@ -11,7 +17,7 @@ const packageVersion: string = fs.existsSync(packageJsonPath)
   : "1.0.0";
 
 export const config = {
-  port: parseInt(process.env.PORT || "3000", 10),
+  port: parseIntOrDefault(process.env.PORT, 3000),
   nodeEnv: process.env.NODE_ENV || "development",
 
   databaseUrl: process.env.DATABASE_URL || "",
@@ -31,25 +37,22 @@ export const config = {
     path.resolve("./analyzers/gin/bin/gin-analyzer"),
 
   limits: {
-    maxConcurrentAnalyses: parseInt(
-      process.env.MAX_CONCURRENT_ANALYSES || "3",
-      10
-    ),
-    rateLimitPerHour: parseInt(process.env.RATE_LIMIT_PER_HOUR || "10", 10),
-    maxQueueSize: parseInt(process.env.MAX_QUEUE_SIZE || "100", 10),
+    maxConcurrentAnalyses: parseIntOrDefault(process.env.MAX_CONCURRENT_ANALYSES, 3),
+    rateLimitPerHour: parseIntOrDefault(process.env.RATE_LIMIT_PER_HOUR, 10),
+    maxQueueSize: parseIntOrDefault(process.env.MAX_QUEUE_SIZE, 100),
   },
 
   timeouts: {
-    cloneMs: parseInt(process.env.CLONE_TIMEOUT_MS || "90000", 10),
-    restoreMs: parseInt(process.env.RESTORE_TIMEOUT_MS || "120000", 10),
-    parseMs: parseInt(process.env.PARSE_TIMEOUT_MS || "120000", 10),
-    prMs: parseInt(process.env.PR_TIMEOUT_MS || "30000", 10),
-    jobMs: parseInt(process.env.JOB_TIMEOUT_MS || "600000", 10),
+    cloneMs: parseIntOrDefault(process.env.CLONE_TIMEOUT_MS, 90000),
+    restoreMs: parseIntOrDefault(process.env.RESTORE_TIMEOUT_MS, 120000),
+    parseMs: parseIntOrDefault(process.env.PARSE_TIMEOUT_MS, 120000),
+    prMs: parseIntOrDefault(process.env.PR_TIMEOUT_MS, 30000),
+    jobMs: parseIntOrDefault(process.env.JOB_TIMEOUT_MS, 600000),
   },
 
   userAgent: `ASTronaut/${packageVersion}`,
 
-  dbPoolMax: parseInt(process.env.DB_POOL_MAX || "10", 10),
+  dbPoolMax: parseIntOrDefault(process.env.DB_POOL_MAX, 10),
   logLevel: process.env.LOG_LEVEL || "info",
 } as const;
 
@@ -66,6 +69,14 @@ export function validateConfig(): void {
   if (missing.length > 0) {
     console.error(
       `FATAL: Missing required environment variables: ${missing.join(", ")}`
+    );
+    process.exit(1);
+  }
+
+  // Fatal if private key file doesn't exist
+  if (!fs.existsSync(config.github.privateKeyPath)) {
+    console.error(
+      `FATAL: GitHub App private key file not found at: ${config.github.privateKeyPath}`
     );
     process.exit(1);
   }

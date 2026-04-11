@@ -68,7 +68,19 @@ var httpMethods = map[string]string{
 	"PATCH":   "PATCH",
 	"HEAD":    "HEAD",
 	"OPTIONS": "OPTIONS",
-	"Any":     "GET", // fallback
+}
+
+var allHTTPMethods = []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
+
+func resolveHTTPMethods(methodName string) ([]string, bool) {
+	if methodName == "Any" {
+		return allHTTPMethods, true
+	}
+	method, ok := httpMethods[methodName]
+	if !ok {
+		return nil, false
+	}
+	return []string{method}, true
 }
 
 func main() {
@@ -133,8 +145,54 @@ func parseGoFile(filePath string, repoPath string) ([]RouteInfo, []ParseError) {
 	// key: variable name, value: prefix path
 	groupPrefixes := map[string]string{}
 
+	// First pass: discover Group() assignments to populate prefixes
 	ast.Inspect(node, func(n ast.Node) bool {
-		// Look for method calls like r.GET("/path", handler)
+		assignStmt, ok := n.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+
+		if len(assignStmt.Rhs) != 1 || len(assignStmt.Lhs) != 1 {
+			return true
+		}
+
+		callExpr, ok := assignStmt.Rhs[0].(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+
+		selExpr, ok := callExpr.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+
+		if selExpr.Sel.Name != "Group" || len(callExpr.Args) == 0 {
+			return true
+		}
+
+		groupPath := extractStringLiteral(callExpr.Args[0])
+		if groupPath == "" {
+			return true
+		}
+
+		// Get parent prefix if receiver is a known group
+		parentPrefix := ""
+		if ident, ok := selExpr.X.(*ast.Ident); ok {
+			if p, exists := groupPrefixes[ident.Name]; exists {
+				parentPrefix = p
+			}
+		}
+
+		// Get the assigned variable name
+		if ident, ok := assignStmt.Lhs[0].(*ast.Ident); ok {
+			groupPrefixes[ident.Name] = parentPrefix + groupPath
+		}
+
+		return true
+	})
+
+	// Second pass: extract routes with correct group prefixes
+	ast.Inspect(node, func(n ast.Node) bool {
 		callExpr, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
@@ -147,19 +205,13 @@ func parseGoFile(filePath string, repoPath string) ([]RouteInfo, []ParseError) {
 
 		methodName := selExpr.Sel.Name
 
-		// Check for Group() calls: v1 := r.Group("/api/v1")
-		if methodName == "Group" && len(callExpr.Args) > 0 {
-			if groupPath := extractStringLiteral(callExpr.Args[0]); groupPath != "" {
-				// Try to find the assignment target
-				// This is a simplification — works for `v1 := r.Group("/prefix")`
-				// tracked via parent assignment
-				_ = groupPath // Will be picked up in assignment tracking below
-			}
+		// Skip Group() calls — not HTTP routes
+		if methodName == "Group" {
 			return true
 		}
 
 		// Check if this is an HTTP method registration
-		httpMethod, isHTTP := httpMethods[methodName]
+		methods, isHTTP := resolveHTTPMethods(methodName)
 		if !isHTTP {
 			return true
 		}
@@ -217,136 +269,8 @@ func parseGoFile(filePath string, repoPath string) ([]RouteInfo, []ParseError) {
 			}
 		}
 
-		route := RouteInfo{
-			Path:        convertGinPathToOpenAPI(fullPath),
-			Method:      httpMethod,
-			Controller:  nil,
-			RoutePrefix: nilIfEmpty(prefix),
-			Params:      params,
-			RequestBody: nil,
-			Responses:   []ResponseInfo{{Status: 200, Type: nil, Properties: []PropertyInfo{}}},
-			Auth:        auth,
-			Middleware:   ensureSlice(middleware),
-			Description: description,
-			Source:      relativePath(filePath, repoPath),
-		}
-
-		routes = append(routes, route)
-		return true
-	})
-
-	// Second pass: track Group() assignments
-	ast.Inspect(node, func(n ast.Node) bool {
-		assignStmt, ok := n.(*ast.AssignStmt)
-		if !ok {
-			return true
-		}
-
-		if len(assignStmt.Rhs) != 1 || len(assignStmt.Lhs) != 1 {
-			return true
-		}
-
-		callExpr, ok := assignStmt.Rhs[0].(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-
-		selExpr, ok := callExpr.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-
-		if selExpr.Sel.Name != "Group" || len(callExpr.Args) == 0 {
-			return true
-		}
-
-		groupPath := extractStringLiteral(callExpr.Args[0])
-		if groupPath == "" {
-			return true
-		}
-
-		// Get parent prefix if receiver is a known group
-		parentPrefix := ""
-		if ident, ok := selExpr.X.(*ast.Ident); ok {
-			if p, exists := groupPrefixes[ident.Name]; exists {
-				parentPrefix = p
-			}
-		}
-
-		// Get the assigned variable name
-		if ident, ok := assignStmt.Lhs[0].(*ast.Ident); ok {
-			groupPrefixes[ident.Name] = parentPrefix + groupPath
-		}
-
-		return true
-	})
-
-	// If we found group prefixes, re-parse to get routes with correct prefixes
-	if len(groupPrefixes) > 0 {
-		routes = nil // Reset and re-parse with prefix info
-		ast.Inspect(node, func(n ast.Node) bool {
-			callExpr, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-
-			selExpr, ok := callExpr.Fun.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-
-			methodName := selExpr.Sel.Name
-			httpMethod, isHTTP := httpMethods[methodName]
-			if !isHTTP || methodName == "Group" {
-				return true
-			}
-
-			if len(callExpr.Args) < 2 {
-				return true
-			}
-
-			routePath := extractStringLiteral(callExpr.Args[0])
-			if routePath == "" {
-				return true
-			}
-
-			prefix := ""
-			if ident, ok := selExpr.X.(*ast.Ident); ok {
-				if p, exists := groupPrefixes[ident.Name]; exists {
-					prefix = p
-				}
-			}
-
-			fullPath := prefix + routePath
-			params := extractPathParams(fullPath)
-
-			var description *string
-			if len(callExpr.Args) >= 2 {
-				lastArg := callExpr.Args[len(callExpr.Args)-1]
-				if handlerName := extractFuncName(lastArg); handlerName != "" {
-					desc := handlerName
-					description = &desc
-				}
-			}
-
-			var middleware []string
-			if len(callExpr.Args) > 2 {
-				for _, arg := range callExpr.Args[1 : len(callExpr.Args)-1] {
-					if mwName := extractFuncName(arg); mwName != "" {
-						middleware = append(middleware, mwName)
-					}
-				}
-			}
-
-			var auth *string
-			for _, mw := range middleware {
-				lower := strings.ToLower(mw)
-				if strings.Contains(lower, "auth") || strings.Contains(lower, "jwt") || strings.Contains(lower, "token") {
-					auth = &mw
-					break
-				}
-			}
-
+		// Generate a route entry for each resolved method (Any → all methods)
+		for _, httpMethod := range methods {
 			route := RouteInfo{
 				Path:        convertGinPathToOpenAPI(fullPath),
 				Method:      httpMethod,
@@ -362,9 +286,9 @@ func parseGoFile(filePath string, repoPath string) ([]RouteInfo, []ParseError) {
 			}
 
 			routes = append(routes, route)
-			return true
-		})
-	}
+		}
+		return true
+	})
 
 	return routes, errors
 }

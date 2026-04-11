@@ -32,21 +32,31 @@ const server = app.listen(config.port, async () => {
 
 // Graceful shutdown
 const DRAIN_TIMEOUT_MS = 30_000;
+let isShuttingDown = false;
 
 async function shutdown(signal: string): Promise<void> {
+  if (isShuttingDown) {
+    logger.info({ signal }, "Shutdown already in progress — ignoring");
+    return;
+  }
+  isShuttingDown = true;
+
   logger.info({ signal }, "Shutdown signal received — draining");
 
   await new Promise<void>((resolve) => server.close(() => resolve()));
 
   // Wait for active jobs to finish (with timeout)
   const drainPromise = analysisQueue.drain();
-  const timeoutPromise = new Promise<"timeout">((resolve) =>
-    setTimeout(() => resolve("timeout"), DRAIN_TIMEOUT_MS)
-  );
+  let drainTimer: NodeJS.Timeout;
+  const timeoutPromise = new Promise<"timeout">((resolve) => {
+    drainTimer = setTimeout(() => resolve("timeout"), DRAIN_TIMEOUT_MS);
+    drainTimer.unref();
+  });
   const result = await Promise.race([
     drainPromise.then(() => "drained" as const),
     timeoutPromise,
   ]);
+  clearTimeout(drainTimer!);
 
   if (result === "timeout") {
     logger.warn(

@@ -8,6 +8,7 @@ import { db } from "../db/connection";
 import { webhookEvents } from "../db/schema";
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_STALE_MS = 60 * 60 * 1000; // 1 hour — stop replaying after this
 
 export async function initializePipeline(): Promise<void> {
   analysisQueue.setProcessor(processAnalysis);
@@ -30,26 +31,49 @@ export async function initializePipeline(): Promise<void> {
       );
 
     if (staleEvents.length > 0) {
-      logger.info(
-        { count: staleEvents.length },
-        "Replaying stale webhook events from previous run"
-      );
+      const maxStaleThreshold = new Date(Date.now() - MAX_STALE_MS);
+      const replayable: typeof staleEvents = [];
 
       for (const event of staleEvents) {
-        const payload = event.payload as WorkflowRunPayload;
-        const repoFullName =
-          event.repoFullName || payload?.repository?.full_name;
-        if (!repoFullName) continue;
+        if (
+          event.processed === "processing" &&
+          event.createdAt < maxStaleThreshold
+        ) {
+          logger.warn(
+            { eventId: event.id, createdAt: event.createdAt },
+            "Marking stale event as error — exceeded max replay age"
+          );
+          await db
+            .update(webhookEvents)
+            .set({ processed: "error", processedAt: new Date(), errorMessage: "Exceeded max replay age (1 hour)" })
+            .where(eq(webhookEvents.id, event.id));
+        } else {
+          replayable.push(event);
+        }
+      }
 
-        const item: QueueItem = {
-          id: `replay-${event.id}-${Date.now()}`,
-          repoFullName,
-          payload,
-          addedAt: Date.now(),
-          webhookEventId: event.id,
-        };
+      if (replayable.length > 0) {
+        logger.info(
+          { count: replayable.length },
+          "Replaying stale webhook events from previous run"
+        );
 
-        analysisQueue.enqueue(item);
+        for (const event of replayable) {
+          const payload = event.payload as WorkflowRunPayload;
+          const repoFullName =
+            event.repoFullName || payload?.repository?.full_name;
+          if (!repoFullName) continue;
+
+          const item: QueueItem = {
+            id: `replay-${event.id}-${Date.now()}`,
+            repoFullName,
+            payload,
+            addedAt: Date.now(),
+            webhookEventId: event.id,
+          };
+
+          analysisQueue.enqueue(item);
+        }
       }
     }
   } catch (err) {

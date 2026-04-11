@@ -59,13 +59,13 @@ function pad(n: number): string {
 function buildBranchName(): string {
   const now = new Date();
   const stamp = [
-    now.getFullYear(),
-    pad(now.getMonth() + 1),
-    pad(now.getDate()),
+    now.getUTCFullYear(),
+    pad(now.getUTCMonth() + 1),
+    pad(now.getUTCDate()),
     "-",
-    pad(now.getHours()),
-    pad(now.getMinutes()),
-    pad(now.getSeconds()),
+    pad(now.getUTCHours()),
+    pad(now.getUTCMinutes()),
+    pad(now.getUTCSeconds()),
   ].join("");
   const nonce = crypto.randomBytes(2).toString("hex");
   return `astronaut/docs-${stamp}-${nonce}`;
@@ -95,7 +95,7 @@ function buildWarningsSection(parseResult: ParseResult): string {
   }
 
   const lines = parseResult.errors.map(
-    (e) => `- \`${e.file}\` \u2014 ${e.reason}`
+    (e) => `- \`${e.file ?? "unknown"}\` \u2014 ${e.reason}`
   );
   return `\n### Parse Warnings\n${lines.join("\n")}\n`;
 }
@@ -165,73 +165,89 @@ export async function createPR(params: CreatePRParams): Promise<CreatePRResult> 
   });
   log.info({ branchName, baseSha }, "Created branch");
 
-  // 5. Create or update the spec file
-  const filePath = docsOutput || "docs/openapi.yaml";
-  const normalizedPath = path.posix.normalize(filePath);
-  if (
-    normalizedPath.startsWith("..") ||
-    path.isAbsolute(normalizedPath) ||
-    filePath.includes("\\") ||
-    filePath.includes("\0") ||
-    filePath.includes(":")
-  ) {
-    throw new Error(`Unsafe file path rejected: ${filePath}`);
-  }
-  const contentBase64 = Buffer.from(spec, "utf8").toString("base64");
-  const commitMessage = "docs: update API documentation (ASTronaut)";
-
-  // Check if the file already exists on the new branch (inherited from default)
-  let existingFileSha: string | undefined;
   try {
-    const { data: existingFile } = await octokit.rest.repos.getContent({
+    // 5. Create or update the spec file
+    const filePath = docsOutput || "docs/openapi.yaml";
+    const normalizedPath = path.posix.normalize(filePath);
+    if (
+      normalizedPath.startsWith("..") ||
+      path.isAbsolute(normalizedPath) ||
+      filePath.includes("\\") ||
+      filePath.includes("\0") ||
+      filePath.includes(":")
+    ) {
+      throw new Error(`Unsafe file path rejected: ${filePath}`);
+    }
+    const contentBase64 = Buffer.from(spec, "utf8").toString("base64");
+    const commitMessage = "docs: update API documentation (ASTronaut)";
+
+    // Check if the file already exists on the new branch (inherited from default)
+    let existingFileSha: string | undefined;
+    try {
+      const { data: existingFile } = await octokit.rest.repos.getContent({
+        owner,
+        repo,
+        path: normalizedPath,
+        ref: branchName,
+      });
+      // getContent returns either a file object or an array (directory listing).
+      if (!Array.isArray(existingFile) && existingFile.type === "file") {
+        existingFileSha = existingFile.sha;
+      }
+    } catch (err: unknown) {
+      // 404 means the file does not exist yet, which is fine.
+      const status = (err as { status?: number }).status;
+      if (status !== 404) {
+        throw err;
+      }
+    }
+
+    await octokit.rest.repos.createOrUpdateFileContents({
       owner,
       repo,
       path: normalizedPath,
-      ref: branchName,
+      message: commitMessage,
+      content: contentBase64,
+      branch: branchName,
+      ...(existingFileSha ? { sha: existingFileSha } : {}),
     });
-    // getContent returns either a file object or an array (directory listing).
-    if (!Array.isArray(existingFile) && existingFile.type === "file") {
-      existingFileSha = existingFile.sha;
+    log.info({ filePath: normalizedPath, branchName }, "Committed spec file");
+
+    // 6. Open the pull request
+    const prTitle = `docs: API documentation update \u2014 ${version}`;
+    const prBody = buildPRBody(version, parseResult);
+
+    const { data: pr } = await octokit.rest.pulls.create({
+      owner,
+      repo,
+      title: prTitle,
+      body: prBody,
+      head: branchName,
+      base: defaultBranch,
+    });
+
+    log.info(
+      { prNumber: pr.number, prUrl: pr.html_url },
+      "Pull request created"
+    );
+
+    return {
+      prNumber: pr.number,
+      prUrl: pr.html_url,
+    };
+  } catch (err) {
+    // Clean up the orphan branch on failure
+    log.warn({ branchName }, "PR creation failed — attempting branch cleanup");
+    try {
+      await octokit.rest.git.deleteRef({
+        owner,
+        repo,
+        ref: `heads/${branchName}`,
+      });
+      log.info({ branchName }, "Orphan branch deleted");
+    } catch (cleanupErr) {
+      log.warn({ branchName, err: cleanupErr }, "Failed to delete orphan branch");
     }
-  } catch (err: unknown) {
-    // 404 means the file does not exist yet, which is fine.
-    const status = (err as { status?: number }).status;
-    if (status !== 404) {
-      throw err;
-    }
+    throw err;
   }
-
-  await octokit.rest.repos.createOrUpdateFileContents({
-    owner,
-    repo,
-    path: normalizedPath,
-    message: commitMessage,
-    content: contentBase64,
-    branch: branchName,
-    ...(existingFileSha ? { sha: existingFileSha } : {}),
-  });
-  log.info({ filePath: normalizedPath, branchName }, "Committed spec file");
-
-  // 6. Open the pull request
-  const prTitle = `docs: API documentation update \u2014 ${version}`;
-  const prBody = buildPRBody(version, parseResult);
-
-  const { data: pr } = await octokit.rest.pulls.create({
-    owner,
-    repo,
-    title: prTitle,
-    body: prBody,
-    head: branchName,
-    base: defaultBranch,
-  });
-
-  log.info(
-    { prNumber: pr.number, prUrl: pr.html_url },
-    "Pull request created"
-  );
-
-  return {
-    prNumber: pr.number,
-    prUrl: pr.html_url,
-  };
 }

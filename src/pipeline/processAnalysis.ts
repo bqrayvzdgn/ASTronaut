@@ -62,46 +62,35 @@ export async function processAnalysis(item: QueueItem): Promise<void> {
   log.info("Starting analysis pipeline");
   await updateWebhookStatus(webhookEventId, "processing");
 
-  // 1. Permission check
-  let token: string;
-  try {
-    token = await githubApiRetry(
-      () => withTimeout(getValidToken(installationId), config.timeouts.prMs, "getValidToken"),
-      "getValidToken"
-    );
-  } catch (err) {
-    log.error({ err }, "Failed to obtain installation token");
-    throw err;
-  }
-
-  const octokit = new Octokit({ auth: token, userAgent: config.userAgent });
-
-  const permissions = await githubApiRetry(
-    () => withTimeout(checkRepoPermissions(octokit, owner, repo), config.timeouts.prMs, "checkRepoPermissions"),
-    "checkRepoPermissions"
-  );
-  if (!permissions.canPush || permissions.archived) {
-    const reason = permissions.archived
-      ? "repository is archived"
-      : "no push permission";
-    log.warn({ reason }, "Skipping analysis due to permission restrictions");
-
-    await updateWebhookStatus(webhookEventId, "skipped");
-    await saveAnalysis({
-      owner,
-      repo,
-      installationId,
-      commitSha,
-      status: "failed",
-      errors: [{ reason: `permission_denied: ${reason}` }],
-      durationMs: Date.now() - startTime,
-    });
-    return;
-  }
-
-  // 2. Clone, analyze, and create PR
+  // 1. Permission check, clone, analyze, and create PR
   let repoPath: string | null = null;
   try {
+    const token = await withTimeout(getValidToken(installationId), 15_000, "getValidToken");
+
+    const octokit = new Octokit({ auth: token, userAgent: config.userAgent });
+
+    const permissions = await githubApiRetry(
+      () => withTimeout(checkRepoPermissions(octokit, owner, repo), config.timeouts.prMs, "checkRepoPermissions"),
+      "checkRepoPermissions"
+    );
+    if (!permissions.canPush || permissions.archived) {
+      const reason = permissions.archived
+        ? "repository is archived"
+        : "no push permission";
+      log.warn({ reason }, "Skipping analysis due to permission restrictions");
+
+      await updateWebhookStatus(webhookEventId, "skipped");
+      await saveAnalysis({
+        owner,
+        repo,
+        installationId,
+        commitSha,
+        status: "failed",
+        errors: [{ reason: `permission_denied: ${reason}` }],
+        durationMs: Date.now() - startTime,
+      });
+      return;
+    }
     repoPath = await gitCloneRetry(
       () => cloneRepo(owner, repo, token),
       "cloneRepo"
@@ -324,6 +313,6 @@ async function saveAnalysis(params: SaveAnalysisParams): Promise<void> {
       durationMs: params.durationMs,
     });
   } catch (err) {
-    logger.warn({ err, commitSha: params.commitSha }, "Failed to save analysis to database");
+    logger.error({ err, commitSha: params.commitSha }, "Failed to save analysis to database");
   }
 }

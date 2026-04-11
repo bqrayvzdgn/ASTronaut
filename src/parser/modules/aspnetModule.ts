@@ -30,19 +30,27 @@ const aspnetModule: FrameworkModule = {
 
 async function findCsprojFiles(repoPath: string): Promise<string[]> {
   const results: string[] = [];
-  const entries = await fsPromises.readdir(repoPath, {
-    withFileTypes: true,
-    recursive: true,
-  });
-  for (const entry of entries) {
-    if (
-      entry.isFile() &&
-      entry.name.endsWith(".csproj") &&
-      !(entry.parentPath ?? (entry as any).path).includes("node_modules")
-    ) {
-      results.push(path.join((entry.parentPath ?? (entry as any).path), entry.name));
+
+  async function walk(dir: string): Promise<void> {
+    let entries: import("fs").Dirent[];
+    try {
+      entries = await fsPromises.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "node_modules" && entry.name !== ".git") {
+          await walk(fullPath);
+        }
+      } else if (entry.isFile() && entry.name.endsWith(".csproj")) {
+        results.push(fullPath);
+      }
     }
   }
+
+  await walk(repoPath);
   return results;
 }
 

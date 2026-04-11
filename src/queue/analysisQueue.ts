@@ -78,6 +78,9 @@ export class AnalysisQueue {
   /**
    * Returns a promise that resolves when all active jobs have completed.
    * Used for graceful shutdown.
+   *
+   * The empty-check and Promise creation cannot race because JavaScript
+   * is single-threaded — no job can complete between the two statements.
    */
   drain(): Promise<void> {
     if (this.activeJobs.size === 0 && this.queue.length === 0) return Promise.resolve();

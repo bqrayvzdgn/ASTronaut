@@ -65,25 +65,32 @@ export async function cloneRepo(
   log.info({ owner, repo, repoPath }, "Cloning repository");
 
   try {
+    const base64Token = Buffer.from(`x-access-token:${installationToken}`).toString("base64");
     await execFileAsync(
       "git",
       [
-        "-c",
-        `http.extraHeader=Authorization: Basic ${Buffer.from(`x-access-token:${installationToken}`).toString("base64")}`,
         "clone",
         "--depth",
         "1",
         cloneUrl,
         repoPath,
       ],
-      { timeout: config.timeouts.cloneMs }
+      {
+        timeout: config.timeouts.cloneMs,
+        env: {
+          ...process.env,
+          GIT_CONFIG_COUNT: "1",
+          GIT_CONFIG_KEY_0: "http.extraHeader",
+          GIT_CONFIG_VALUE_0: `Authorization: Basic ${base64Token}`,
+        },
+      }
     );
   } catch (err: unknown) {
     // Scrub the token from any error messages before re-throwing
     const sanitized =
       err instanceof Error
         ? new Error(
-            err.message.replace(installationToken, "***"),
+            err.message.replaceAll(installationToken, "***"),
           )
         : err;
     log.error({ owner, repo, err: sanitized }, "Git clone failed");
@@ -97,7 +104,12 @@ export async function cloneRepo(
 /**
  * Walk a directory tree recursively and return all file paths.
  */
-async function walkDir(dir: string): Promise<string[]> {
+async function walkDir(dir: string, depth: number = 0): Promise<string[]> {
+  if (depth > 50) {
+    log.warn({ dir, depth }, "Maximum directory depth exceeded — skipping");
+    return [];
+  }
+
   const results: string[] = [];
   const entries = await fs.readdir(dir, { withFileTypes: true });
 
@@ -112,7 +124,7 @@ async function walkDir(dir: string): Promise<string[]> {
     if (entry.isDirectory()) {
       // Skip .git directory entirely
       if (entry.name === ".git") continue;
-      const nested = await walkDir(fullPath);
+      const nested = await walkDir(fullPath, depth + 1);
       results.push(...nested);
     } else {
       results.push(fullPath);
