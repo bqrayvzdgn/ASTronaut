@@ -26,11 +26,11 @@ npm run migrate:generate # Generate migration from schema changes
 npm run migrate:push     # Push schema to database
 
 # .NET Analyzer (requires .NET 8 SDK)
-cd analyzer && dotnet publish -c Release   # Build the C# analyzer
-dotnet analyzer/bin/Release/net8.0/ASTronautAnalyzer.dll <repo-path>  # Run standalone
+cd analyzers/dotnet && dotnet publish -c Release   # Build the C# analyzer
+dotnet analyzers/dotnet/bin/Release/net8.0/ASTronautAnalyzer.dll <repo-path>  # Run standalone
 
 # Go Analyzer (requires Go 1.21+)
-cd go-analyzer && go build -o bin/gin-analyzer .   # Build the Gin analyzer
+cd analyzers/gin && go build -o bin/gin-analyzer .   # Build the Gin analyzer
 
 # Manual parser testing
 npx ts-node scripts/test-parser.ts <repo-path> [express|aspnet|gin]
@@ -67,15 +67,15 @@ GitHub webhook (workflow_run.completed.success)
 | Framework | Parser | AST Tool | Integration |
 |---|---|---|---|
 | Express (JS/TS) | `src/parser/expressParser.ts` | Babel (`@babel/parser` + `@babel/traverse`) | In-process |
-| Gin (Go) | `src/parser/ginBridge.ts` → `go-analyzer/` | Go AST (`go/parser` + `go/ast`) | Child process — Go CLI tool outputs JSON to stdout |
-| ASP.NET Core | `src/parser/dotnetBridge.ts` → `analyzer/` | Roslyn (MSBuildWorkspace) | Child process — .NET CLI tool outputs JSON to stdout |
+| Gin (Go) | `src/parser/ginBridge.ts` → `analyzers/gin/` | Go AST (`go/parser` + `go/ast`) | Child process — Go CLI tool outputs JSON to stdout |
+| ASP.NET Core | `src/parser/dotnetBridge.ts` → `analyzers/dotnet/` | Roslyn (MSBuildWorkspace) | Child process — .NET CLI tool outputs JSON to stdout |
 
 ### Key Design Decisions
 
 - **Registry pattern** (`src/parser/registry.ts`): All parsers register via `FrameworkModule` interface. Pipeline calls `detectAndParse()` which runs `detect()` on all modules and picks the highest confidence score.
 - **Express parser** uses Babel AST and does two traversal passes: first pass identifies router/app variables and global middleware; second pass extracts routes with params, body, query, auth, and TypeScript type information from `Request<Params, ResBody, ReqBody, ReqQuery>` generics.
-- **.NET analyzer** is a separate C# project (`analyzer/`) that uses Roslyn's MSBuildWorkspace for full semantic analysis. Falls back to syntax-only parsing if `dotnet restore` fails. Communicates with Node via JSON on stdout.
-- **Gin analyzer** is a separate Go project (`go-analyzer/`) using Go's standard `go/parser` and `go/ast` packages. Extracts Gin routes (`r.GET()`, `r.POST()`, route groups), outputs JSON to stdout.
+- **.NET analyzer** is a separate C# project (`analyzers/dotnet/`) that uses Roslyn's MSBuildWorkspace for full semantic analysis. Falls back to syntax-only parsing if `dotnet restore` fails. Communicates with Node via JSON on stdout.
+- **Gin analyzer** is a separate Go project (`analyzers/gin/`) using Go's standard `go/parser` and `go/ast` packages. Extracts Gin routes (`r.GET()`, `r.POST()`, route groups), outputs JSON to stdout.
 - **Queue** is in-memory (not Redis/external). Debounces per-repo — if a new webhook arrives for the same repo while one is queued, the older one is replaced.
 - **Rate limiter** is an in-memory sliding window (1 hour) per repository.
 - **Repo config override**: users can place `.autodoc.yml` in their repo root to force framework detection or customize output path (`docs_output`).
@@ -118,8 +118,8 @@ Each module's `detect()` method checks the repo and returns a confidence score (
 - `src/github/` — GitHub App auth (JWT + installation tokens), repo cloning/cleanup, PR creation
 - `src/db/` — Drizzle ORM schema (installations, repos, analyses, webhook_events) and connection
 - `src/queue/` — In-memory concurrency-limited analysis queue
-- `analyzer/` — Standalone .NET 8 CLI tool for ASP.NET route parsing via Roslyn
-- `go-analyzer/` — Standalone Go CLI tool for Gin route parsing via go/ast
+- `analyzers/dotnet/` — Standalone .NET 8 CLI tool for ASP.NET route parsing via Roslyn
+- `analyzers/gin/` — Standalone Go CLI tool for Gin route parsing via go/ast
 
 ### Shared Types
 

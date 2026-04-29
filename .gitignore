@@ -5,9 +5,10 @@ node_modules/
 dist/
 *.tsbuildinfo
 
-# .NET Analyzer build
-analyzer/bin/
-analyzer/obj/
+# Analyzer build output
+analyzers/dotnet/bin/
+analyzers/dotnet/obj/
+analyzers/gin/bin/
 
 # Environment & secrets
 .env

@@ -77,7 +77,10 @@ docs_output: api/openapi.yaml
 npm install
 
 # Build the .NET analyzer
-cd analyzer && dotnet publish -c Release && cd ..
+cd analyzers/dotnet && dotnet publish -c Release && cd ..
+
+# Build the Gin analyzer
+cd analyzers/gin && go build -o bin/gin-analyzer . && cd ..
 
 # Copy environment config
 cp .env.example .env
@@ -99,6 +102,7 @@ npm run dev
 | `GITHUB_APP_PRIVATE_KEY_PATH` | Path to the `.pem` private key |
 | `GITHUB_WEBHOOK_SECRET` | Webhook secret for signature verification |
 | `DOTNET_ANALYZER_PATH` | Path to the compiled .NET analyzer DLL |
+| `GIN_ANALYZER_PATH` | Path to the compiled Gin analyzer binary |
 | `MAX_CONCURRENT_ANALYSES` | Max parallel analyses (default: 3) |
 | `RATE_LIMIT_PER_HOUR` | Webhook rate limit per repo (default: 10) |
 
@@ -122,10 +126,7 @@ npx ts-node scripts/test-parser.ts /path/to/repo [express|aspnet|gin]
 
 ## Branch Strategy
 
-| Branch | Purpose |
-|---|---|
-| `prod` | Production (default branch) |
-| `dev` | Active development |
+Şu an tüm değişiklikler direkt `main`'e push ediliyor — proje stabilize olana kadar bu şekilde devam edecek. İlerleyen aşamada `main` → `dev` → `feature/fix/chore` stratejisine geçilecek.
 
 ## License
 
