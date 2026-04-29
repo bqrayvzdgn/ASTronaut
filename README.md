@@ -59,7 +59,6 @@ docs_output: api/openapi.yaml
 | GitHub API | Octokit (`@octokit/rest`) |
 | Logging | Pino |
 | Testing | Jest + ts-jest |
-| CI/CD | GitHub Actions |
 
 ## Development Setup
 

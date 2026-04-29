@@ -188,10 +188,6 @@ All parsers produce `ParseResult` (defined in `src/parser/types.ts`) containing 
 - `GET /health` — Checks DB connectivity and .NET SDK availability. Returns 200 or 503 with detailed status.
 - `POST /webhook/github` — Receives `workflow_run` webhooks. Verifies HMAC-SHA256 signature via constant-time comparison.
 
-## CI/CD
-
-Push to `main` → GitHub Actions runs `npm test` → on success, SSH deploys to VPS (`git pull`, `npm ci --production`, `npm run build`, `dotnet publish`, `pm2 restart astronaut`). Workflow defined in `.github/workflows/deploy.yml`.
-
 ## Environment
 
 Requires Node.js 20, PostgreSQL, .NET 8 SDK (for ASP.NET analysis), and Go 1.21+ (for Gin analysis). Copy `.env.example` to `.env` for local development. The GitHub App needs a PEM private key file. Deployed to VPS via SSH (`pm2 restart astronaut`). Key env vars: `MAX_CONCURRENT_ANALYSES` (default 3), `RATE_LIMIT_PER_HOUR` (default 10), and timeout vars (see Configurable Timeouts above).
