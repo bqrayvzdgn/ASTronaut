@@ -1,0 +1,31 @@
+{
+  "name": "@astronaut/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ASTronaut IR types and runtime validators (proto-aligned)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "gen:proto": "echo 'TODO(M1+): wire ts-proto or @bufbuild/protobuf-es; types currently hand-aligned with proto/parser.proto'",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

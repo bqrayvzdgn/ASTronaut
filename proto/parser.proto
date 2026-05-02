@@ -1,0 +1,204 @@
+// ASTronaut v2 — Parser Intermediate Representation
+//
+// Single source of truth for the contract between parsers and the OpenAPI generator.
+// Every parser (parser-js, parser-go, parser-dotnet, ...) emits ParseResult.
+// The generator consumes ParseResult and produces OpenAPI 3.1 YAML.
+//
+// JSON serialization (proto3 canonical JSON mapping) is the wire format for
+// subprocess parsers (Go, .NET CLI). gRPC migration is V2; this proto already
+// supports it without changes.
+//
+// Versioning: package is `astronaut.v1`. Breaking changes allowed only in v0.x;
+// after v1.0.0 release, additive-only.
+
+syntax = "proto3";
+
+package astronaut.v1;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Root
+// ─────────────────────────────────────────────────────────────────────────────
+
+message ParseResult {
+  repeated RouteInfo routes = 1;
+  repeated ParseError errors = 2;
+  ParserMetadata metadata = 3;
+  // Reusable component schemas (e.g. DTOs). Generator emits these under
+  // `components/schemas`; routes reference them via Schema with kind=REFERENCE.
+  map<string, Schema> shared_schemas = 4;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Route
+// ─────────────────────────────────────────────────────────────────────────────
+
+message RouteInfo {
+  // HTTP method in upper case: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE.
+  string method = 1;
+
+  // OpenAPI-style path with {param} placeholders, e.g. "/users/{id}/posts".
+  string path = 2;
+
+  repeated ParamInfo path_params = 3;
+  repeated ParamInfo query_params = 4;
+  repeated ParamInfo header_params = 5;
+
+  optional BodyInfo request_body = 6;
+  repeated ResponseInfo responses = 7;
+
+  optional AuthInfo auth = 8;
+
+  string summary = 9;        // short, single-line
+  string description = 10;   // long-form, may be multi-line markdown
+  string operation_id = 11;  // unique within spec; generator may rename to dedup
+  repeated string tags = 12;
+  bool deprecated = 13;
+
+  SourceLocation source = 14;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Parameters and bodies
+// ─────────────────────────────────────────────────────────────────────────────
+
+message ParamInfo {
+  string name = 1;
+  Schema schema = 2;
+  bool required = 3;
+  string description = 4;
+  optional string example = 5;
+}
+
+message BodyInfo {
+  string content_type = 1;   // e.g. "application/json", "multipart/form-data"
+  Schema schema = 2;
+  bool required = 3;
+}
+
+message ResponseInfo {
+  int32 status = 1;          // e.g. 200, 404
+  string description = 2;
+  optional Schema schema = 3;
+  string content_type = 4;   // default "application/json" if schema present
+  map<string, ParamInfo> headers = 5;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Schema (compositional, OpenAPI 3.1 / JSON Schema 2020-12 friendly)
+// ─────────────────────────────────────────────────────────────────────────────
+
+message Schema {
+  enum Kind {
+    PRIMITIVE = 0;
+    OBJECT = 1;
+    ARRAY = 2;
+    REFERENCE = 3;
+    ONE_OF = 4;
+    ANY_OF = 5;
+    ALL_OF = 6;
+  }
+  Kind kind = 1;
+
+  // For REFERENCE: the key into ParseResult.shared_schemas.
+  optional string ref_name = 2;
+
+  // For PRIMITIVE: "string" | "integer" | "number" | "boolean" | "null".
+  optional string primitive_type = 3;
+
+  // OpenAPI format hint, e.g. "int32", "int64", "date-time", "uuid", "email".
+  optional string format = 4;
+
+  // For OBJECT: property name → schema.
+  map<string, Schema> properties = 5;
+  repeated string required_properties = 6;
+
+  // For ARRAY: element schema.
+  optional Schema items = 7;
+
+  // For ONE_OF / ANY_OF / ALL_OF: variant schemas.
+  repeated Schema variants = 8;
+
+  optional Constraints constraints = 9;
+
+  // OpenAPI 3.1 expresses nullable via `type: [..., "null"]`. We carry it as
+  // a flag here for parser ergonomics; generator emits the correct form.
+  bool nullable = 10;
+
+  string description = 11;
+  optional string default_value = 12;   // JSON-serialized literal
+  optional string example = 13;         // JSON-serialized literal
+}
+
+message Constraints {
+  optional double minimum = 1;
+  optional double maximum = 2;
+  optional bool exclusive_minimum = 3;
+  optional bool exclusive_maximum = 4;
+  optional int32 min_length = 5;
+  optional int32 max_length = 6;
+  optional int32 min_items = 7;
+  optional int32 max_items = 8;
+  optional bool unique_items = 9;
+  optional string pattern = 10;
+  repeated string enum_values = 11;     // JSON-serialized literals
+  optional double multiple_of = 12;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auth
+// ─────────────────────────────────────────────────────────────────────────────
+
+message AuthInfo {
+  // OpenAPI security scheme type: "http", "apiKey", "oauth2", "openIdConnect".
+  string type = 1;
+
+  // For type=http: "bearer", "basic", etc. (the "scheme" sub-field in OpenAPI).
+  optional string scheme = 2;
+
+  // For type=apiKey: header/query/cookie name.
+  optional string name = 3;
+
+  // For type=apiKey: "header" | "query" | "cookie".
+  optional string in = 4;
+
+  // For type=http+scheme=bearer: e.g. "JWT".
+  optional string bearer_format = 5;
+
+  // Stable id used as key under components/securitySchemes.
+  // Multiple routes sharing the same auth will dedupe via this id.
+  string id = 6;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Diagnostics
+// ─────────────────────────────────────────────────────────────────────────────
+
+message ParseError {
+  string file = 1;
+  int32 line = 2;
+  string message = 3;
+  // "warning" | "error". Errors with severity="error" cause CLI to exit non-zero
+  // when --strict or when no routes were parsed at all.
+  string severity = 4;
+  // Stable code (E001, W042, ...) for grep/CI suppression. Optional but
+  // recommended for parser authors.
+  optional string code = 5;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Metadata
+// ─────────────────────────────────────────────────────────────────────────────
+
+message ParserMetadata {
+  string framework = 1;          // "express" | "gin" | "aspnet" | ...
+  string framework_version = 2;  // version detected from manifest, if any
+  int32 files_scanned = 3;
+  int64 duration_ms = 4;
+  string parser_version = 5;     // semver of the parser implementation
+}
+
+message SourceLocation {
+  string file = 1;   // path relative to repo root
+  int32 line = 2;
+  int32 column = 3;
+}

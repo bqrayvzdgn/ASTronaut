@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Generated code
+packages/core/src/generated/
+**/*.pb.go
+**/*.pb.cs
+
+# Analyzers build output
+analyzers/go/bin/
+analyzers/dotnet/bin/
+analyzers/dotnet/obj/
+
+# Test output
+coverage/
+.vitest/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
