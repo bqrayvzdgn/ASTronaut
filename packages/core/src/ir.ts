@@ -27,15 +27,22 @@ export type PrimitiveType = "string" | "integer" | "number" | "boolean" | "null"
 
 export type ParamLocation = "header" | "query" | "cookie";
 
-export type AuthType = "http" | "apiKey" | "oauth2" | "openIdConnect";
+export type AuthType =
+  | "http"
+  | "apiKey"
+  | "mutualTLS"
+  | "oauth2"
+  | "openIdConnect";
 
 export type Severity = "warning" | "error";
 
 export interface Constraints {
   minimum?: number;
   maximum?: number;
-  exclusiveMinimum?: boolean;
-  exclusiveMaximum?: boolean;
+  // OpenAPI 3.1 / JSON Schema 2020-12: numeric bound, not a flag.
+  // `exclusiveMinimum: 5` ⇒ value > 5.
+  exclusiveMinimum?: number;
+  exclusiveMaximum?: number;
   minLength?: number;
   maxLength?: number;
   minItems?: number;

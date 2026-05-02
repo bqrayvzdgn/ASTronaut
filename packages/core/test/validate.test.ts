@@ -62,6 +62,44 @@ describe("parseIR", () => {
   });
 });
 
+describe("constraints", () => {
+  it("accepts numeric exclusiveMinimum/exclusiveMaximum (3.1 style)", () => {
+    const schema = {
+      kind: "PRIMITIVE" as const,
+      primitiveType: "number" as const,
+      constraints: { exclusiveMinimum: 0, exclusiveMaximum: 100 },
+    };
+    expect(schemaSchema.safeParse(schema).success).toBe(true);
+  });
+
+  it("rejects boolean exclusiveMinimum (3.0 leftover)", () => {
+    const schema = {
+      kind: "PRIMITIVE" as const,
+      primitiveType: "number" as const,
+      constraints: { exclusiveMinimum: true },
+    };
+    expect(schemaSchema.safeParse(schema).success).toBe(false);
+  });
+});
+
+describe("auth", () => {
+  it("accepts every OpenAPI 3.1 securityScheme type", () => {
+    const types = ["http", "apiKey", "mutualTLS", "oauth2", "openIdConnect"] as const;
+    for (const type of types) {
+      const result = parseIR({
+        ...minimalValidResult,
+        routes: [
+          {
+            ...minimalValidResult.routes[0]!,
+            auth: { type, id: `scheme-${type}` },
+          },
+        ],
+      });
+      expect(result.routes[0]?.auth?.type).toBe(type);
+    }
+  });
+});
+
 describe("schema (recursive)", () => {
   it("accepts deeply nested OBJECT/ARRAY/REFERENCE composition", () => {
     const nested = {

@@ -41,6 +41,7 @@ export const paramLocationSchema = z.enum(["header", "query", "cookie"]);
 export const authTypeSchema = z.enum([
   "http",
   "apiKey",
+  "mutualTLS",
   "oauth2",
   "openIdConnect",
 ]);
@@ -51,8 +52,8 @@ export const constraintsSchema = z
   .object({
     minimum: z.number().optional(),
     maximum: z.number().optional(),
-    exclusiveMinimum: z.boolean().optional(),
-    exclusiveMaximum: z.boolean().optional(),
+    exclusiveMinimum: z.number().optional(),
+    exclusiveMaximum: z.number().optional(),
     minLength: z.number().int().nonnegative().optional(),
     maxLength: z.number().int().nonnegative().optional(),
     minItems: z.number().int().nonnegative().optional(),

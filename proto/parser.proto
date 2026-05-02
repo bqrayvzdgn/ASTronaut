@@ -132,8 +132,11 @@ message Schema {
 message Constraints {
   optional double minimum = 1;
   optional double maximum = 2;
-  optional bool exclusive_minimum = 3;
-  optional bool exclusive_maximum = 4;
+  // OpenAPI 3.1 / JSON Schema 2020-12 style: these are bounds, not flags.
+  // `exclusive_minimum: 5` means "value > 5". (3.0 used a boolean flag paired
+  // with `minimum`; the IR is 3.1-native, generator handles emission.)
+  optional double exclusive_minimum = 3;
+  optional double exclusive_maximum = 4;
   optional int32 min_length = 5;
   optional int32 max_length = 6;
   optional int32 min_items = 7;
