@@ -88,6 +88,20 @@ public static class ResponseTypeReader
             ? name.Substring(0, name.Length - 9)
             : name;
 
+    // Convention-based default status for a (verb, has-payload) pair. Used
+    // when an action declares no [ProducesResponseType] — better than
+    // always emitting "200" for POST/DELETE/PUT/PATCH.
+    public static int InferDefaultStatus(string verb, bool hasSchema) => (verb, hasSchema) switch
+    {
+        ("POST", _) => 201,
+        ("DELETE", false) => 204,
+        ("PUT", false) => 204,
+        ("PATCH", false) => 204,
+        _ => 200,
+    };
+
+    public static string DescribeStatusPublic(int status) => DescribeStatus(status);
+
     private static string DescribeStatus(int status) => status switch
     {
         200 => "OK",

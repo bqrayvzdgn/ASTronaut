@@ -274,7 +274,7 @@ public sealed class MinimalApiWalker
             : new List<ResponseInfo>();
         var responses = declaredResponses.Count > 0
             ? declaredResponses
-            : BuildResponses(returnType, typeMapper);
+            : BuildResponses(returnType, typeMapper, verb);
         route = route with { Responses = responses };
 
         if (handlerMethod is not null)
@@ -528,28 +528,26 @@ public sealed class MinimalApiWalker
         pathParams.Add(incoming);
     }
 
-    private static List<ResponseInfo> BuildResponses(ITypeSymbol? returnType, TypeToSchema mapper)
+    private static List<ResponseInfo> BuildResponses(ITypeSymbol? returnType, TypeToSchema mapper, string verb)
     {
-        var responses = new List<ResponseInfo>();
-        if (returnType is null || returnType.SpecialType == SpecialType.System_Void)
+        var unwrapped = returnType is null ? null : UnwrapReturnWrappers(returnType);
+        var hasSchema = unwrapped is not null
+            && !IsIResultType(unwrapped)
+            && unwrapped.SpecialType != SpecialType.System_Void;
+
+        var status = ResponseTypeReader.InferDefaultStatus(verb, hasSchema);
+        var description = ResponseTypeReader.DescribeStatusPublic(status);
+
+        var response = new ResponseInfo { Status = status, Description = description };
+        if (hasSchema && unwrapped is not null)
         {
-            responses.Add(new ResponseInfo { Status = 200, Description = "OK" });
-            return responses;
+            response = response with
+            {
+                Schema = mapper.Map(unwrapped),
+                ContentType = "application/json",
+            };
         }
-        var unwrapped = UnwrapReturnWrappers(returnType);
-        if (unwrapped is null || IsIResultType(unwrapped))
-        {
-            responses.Add(new ResponseInfo { Status = 200, Description = "OK" });
-            return responses;
-        }
-        responses.Add(new ResponseInfo
-        {
-            Status = 200,
-            Description = "OK",
-            Schema = mapper.Map(unwrapped),
-            ContentType = "application/json",
-        });
-        return responses;
+        return new List<ResponseInfo> { response };
     }
 
     private static ITypeSymbol? UnwrapReturnWrappers(ITypeSymbol type)
