@@ -7,13 +7,7 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "html"],
       include: ["packages/*/src/**", "apps/*/src/**"],
-      exclude: [
-        "**/dist/**",
-        "**/node_modules/**",
-        "**/generated/**",
-        "**/*.d.ts",
-        "**/index.ts",
-      ],
+      exclude: ["**/dist/**", "**/node_modules/**", "**/generated/**", "**/*.d.ts", "**/index.ts"],
       thresholds: {
         branches: 60,
         functions: 70,

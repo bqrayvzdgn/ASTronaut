@@ -18,13 +18,7 @@ export const httpMethodSchema = z.enum([
   "TRACE",
 ]);
 
-export const primitiveTypeSchema = z.enum([
-  "string",
-  "integer",
-  "number",
-  "boolean",
-  "null",
-]);
+export const primitiveTypeSchema = z.enum(["string", "integer", "number", "boolean", "null"]);
 
 export const schemaKindSchema = z.enum([
   "PRIMITIVE",
@@ -38,13 +32,7 @@ export const schemaKindSchema = z.enum([
 
 export const paramLocationSchema = z.enum(["header", "query", "cookie"]);
 
-export const authTypeSchema = z.enum([
-  "http",
-  "apiKey",
-  "mutualTLS",
-  "oauth2",
-  "openIdConnect",
-]);
+export const authTypeSchema = z.enum(["http", "apiKey", "mutualTLS", "oauth2", "openIdConnect"]);
 
 export const severitySchema = z.enum(["warning", "error"]);
 

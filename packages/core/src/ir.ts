@@ -4,15 +4,7 @@
 // (Go, .NET) can emit JSON that round-trips through here. The .proto file is
 // the source of truth; if you change one, change both.
 
-export type HttpMethod =
-  | "GET"
-  | "POST"
-  | "PUT"
-  | "DELETE"
-  | "PATCH"
-  | "HEAD"
-  | "OPTIONS"
-  | "TRACE";
+export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS" | "TRACE";
 
 export type SchemaKind =
   | "PRIMITIVE"
@@ -27,12 +19,7 @@ export type PrimitiveType = "string" | "integer" | "number" | "boolean" | "null"
 
 export type ParamLocation = "header" | "query" | "cookie";
 
-export type AuthType =
-  | "http"
-  | "apiKey"
-  | "mutualTLS"
-  | "oauth2"
-  | "openIdConnect";
+export type AuthType = "http" | "apiKey" | "mutualTLS" | "oauth2" | "openIdConnect";
 
 export type Severity = "warning" | "error";
 

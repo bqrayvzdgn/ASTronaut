@@ -29,7 +29,9 @@ describe("parseIR", () => {
   it("rejects when path is missing leading slash", () => {
     const bad = {
       ...minimalValidResult,
-      routes: [{ ...minimalValidResult.routes[0]!, path: "health" }],
+      routes: [
+        { ...(minimalValidResult.routes[0] as ParseResult["routes"][number]), path: "health" },
+      ],
     };
     expect(() => parseIR(bad)).toThrow(IRValidationError);
   });
@@ -37,7 +39,9 @@ describe("parseIR", () => {
   it("rejects unknown HTTP method", () => {
     const bad = {
       ...minimalValidResult,
-      routes: [{ ...minimalValidResult.routes[0]!, method: "FOO" }],
+      routes: [
+        { ...(minimalValidResult.routes[0] as ParseResult["routes"][number]), method: "FOO" },
+      ],
     };
     expect(() => parseIR(bad)).toThrow(IRValidationError);
   });
@@ -90,7 +94,7 @@ describe("auth", () => {
         ...minimalValidResult,
         routes: [
           {
-            ...minimalValidResult.routes[0]!,
+            ...(minimalValidResult.routes[0] as ParseResult["routes"][number]),
             auth: { type, id: `scheme-${type}` },
           },
         ],
