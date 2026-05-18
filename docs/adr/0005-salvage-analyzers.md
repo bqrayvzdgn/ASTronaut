@@ -1,7 +1,7 @@
 # ADR-0005: Salvage Roslyn and Go AST analyzers from V1
 
-**Status:** Accepted
-**Date:** 2026-05-02
+**Status:** Superseded by [ADR-0011](./0011-write-analyzers-from-scratch.md)
+**Date:** 2026-05-02 (superseded 2026-05-03)
 
 ## Context
 
