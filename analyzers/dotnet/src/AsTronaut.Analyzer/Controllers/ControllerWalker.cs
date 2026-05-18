@@ -203,6 +203,9 @@ public sealed class ControllerWalker
                         Required = paramInfo.Required,
                     };
                     break;
+                case Binding.Service:
+                    // DI-injected service (CancellationToken, HttpContext, ILogger…).
+                    break;
             }
         }
 
@@ -212,11 +215,11 @@ public sealed class ControllerWalker
         if (body is not null) routeInfo = routeInfo with { RequestBody = body };
 
         // Prefer [ProducesResponseType] declarations when present; otherwise
-        // fall back to inferring a single 200 from the return type.
+        // fall back to inferring response(s) from the return type and verb.
         var declaredResponses = ResponseTypeReader.Read(method, typeMapper);
         var responses = declaredResponses.Count > 0
             ? declaredResponses
-            : BuildResponses(method, typeMapper);
+            : BuildResponses(method, typeMapper, verb);
         routeInfo = routeInfo with { Responses = responses };
 
         var auth = AuthReader.Resolve(method, method.ContainingType);
@@ -255,7 +258,7 @@ public sealed class ControllerWalker
         return false;
     }
 
-    private enum Binding { Path, Query, Header, Body }
+    private enum Binding { Path, Query, Header, Body, Service }
 
     private static Binding ResolveBinding(IParameterSymbol parameter, HashSet<string> pathParamNames)
     {
@@ -263,14 +266,50 @@ public sealed class ControllerWalker
         if (AttributeReader.HasAttribute(parameter, "FromRoute")) return Binding.Path;
         if (AttributeReader.HasAttribute(parameter, "FromQuery")) return Binding.Query;
         if (AttributeReader.HasAttribute(parameter, "FromHeader")) return Binding.Header;
+        if (AttributeReader.HasAttribute(parameter, "FromServices")
+            || AttributeReader.HasAttribute(parameter, "FromKeyedServices"))
+        {
+            return Binding.Service;
+        }
 
         // Implicit binding (ApiController convention):
+        // - If the type is a well-known framework service (CancellationToken,
+        //   HttpContext, ILogger, ...), skip it entirely.
         // - If the parameter name matches a path token ⇒ path.
         // - Else, if the type is a simple/primitive type ⇒ query.
         // - Else (complex type) ⇒ body.
+        if (IsServiceType(parameter.Type)) return Binding.Service;
         if (pathParamNames.Contains(parameter.Name)) return Binding.Path;
         if (IsSimpleType(parameter.Type)) return Binding.Query;
         return Binding.Body;
+    }
+
+    // Framework-injected types that should never appear as path / query / body
+    // parameters. ASP.NET resolves these from DI or the request context.
+    private static bool IsServiceType(ITypeSymbol type)
+    {
+        var full = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        if (full is "global::System.Threading.CancellationToken"
+            or "global::Microsoft.AspNetCore.Http.HttpContext"
+            or "global::Microsoft.AspNetCore.Http.HttpRequest"
+            or "global::Microsoft.AspNetCore.Http.HttpResponse"
+            or "global::System.Security.Claims.ClaimsPrincipal"
+            or "global::Microsoft.Extensions.Logging.ILogger"
+            or "global::Microsoft.AspNetCore.Mvc.ModelBinding.ModelStateDictionary")
+        {
+            return true;
+        }
+        // Generic ILogger<T> — match unconstructed definition.
+        if (type is INamedTypeSymbol named && named.IsGenericType)
+        {
+            var def = named.ConstructedFrom
+                ?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            if (def == "global::Microsoft.Extensions.Logging.ILogger<TCategoryName>")
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static bool IsSimpleType(ITypeSymbol type)
@@ -311,36 +350,26 @@ public sealed class ControllerWalker
             or "global::System.Uri";
     }
 
-    private static List<ResponseInfo> BuildResponses(IMethodSymbol method, TypeToSchema mapper)
+    private static List<ResponseInfo> BuildResponses(IMethodSymbol method, TypeToSchema mapper, string verb)
     {
-        var responses = new List<ResponseInfo>();
-        var returnType = method.ReturnType;
+        var unwrapped = UnwrapReturnWrappers(method.ReturnType);
+        var hasSchema = unwrapped is not null
+            && !IsActionResultInterface(unwrapped)
+            && unwrapped.SpecialType != SpecialType.System_Void;
 
-        // Unwrap Task<T> / ValueTask<T> / ActionResult<T>.
-        var unwrapped = UnwrapReturnWrappers(returnType);
+        var status = ResponseTypeReader.InferDefaultStatus(verb, hasSchema);
+        var description = ResponseTypeReader.DescribeStatusPublic(status);
 
-        if (unwrapped is null)
+        var response = new ResponseInfo { Status = status, Description = description };
+        if (hasSchema && unwrapped is not null)
         {
-            // Pure Task / void / IActionResult — no schema, default to 200.
-            responses.Add(new ResponseInfo { Status = 200, Description = "OK" });
-            return responses;
+            response = response with
+            {
+                Schema = mapper.Map(unwrapped),
+                ContentType = "application/json",
+            };
         }
-
-        // IActionResult-only return → no schema.
-        if (IsActionResultInterface(unwrapped))
-        {
-            responses.Add(new ResponseInfo { Status = 200, Description = "OK" });
-            return responses;
-        }
-
-        responses.Add(new ResponseInfo
-        {
-            Status = 200,
-            Description = "OK",
-            Schema = mapper.Map(unwrapped),
-            ContentType = "application/json",
-        });
-        return responses;
+        return new List<ResponseInfo> { response };
     }
 
     private static ITypeSymbol? UnwrapReturnWrappers(ITypeSymbol type)
