@@ -17,6 +17,13 @@ packages/core/src/generated/
 analyzers/go/bin/
 analyzers/dotnet/bin/
 analyzers/dotnet/obj/
+analyzers/dotnet/dist/
+analyzers/dotnet/**/bin/
+analyzers/dotnet/**/obj/
+
+# Fixture build output (compile-checked but not committed)
+fixtures/dotnet/**/bin/
+fixtures/dotnet/**/obj/
 
 # Test output
 coverage/

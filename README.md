@@ -6,32 +6,44 @@ CLI-first. Webhook flow planned for V2.
 
 ## Status
 
-🚧 **Active rewrite (M0 bootstrap).** Not usable yet. See [`docs/adr/`](./docs/adr/) for design decisions.
+✅ **MVP ready (.NET).** Analyzes ASP.NET Core projects (both Controllers and full Minimal API surface) and emits valid OpenAPI 3.1. See [ADR-0012](./docs/adr/0012-dotnet-first-ordering.md) for the ordering rationale and [`docs/adr/`](./docs/adr/) for all design decisions.
+
+### Supported today
+
+- Controllers: `[ApiController]`, `[Route]`, `[HttpGet/Post/Put/Delete/Patch]`, route templates with constraints (`{id:int:min(1)}`, `{slug:alpha:length(3,40)}`, `{uuid:guid}`), `[FromBody/Query/Route/Header]`, return type → response schema.
+- Minimal API: `MapGet/Post/Put/Delete/Patch`, nested `MapGroup`, fluent chain (`WithName`, `WithTags`, `WithSummary`, `WithDescription`, `RequireAuthorization`, `AllowAnonymous`), inline lambda + method-reference handlers.
+- Data annotations → `Constraints` (`[Required]`, `[StringLength]`, `[MinLength]`, `[MaxLength]`, `[Range]`, `[RegularExpression]`, `[EmailAddress]`, `[Url]`, `[Phone]`, `[DataType]`).
+- `[Authorize]` / `[AllowAnonymous]` → `securitySchemes` (bearer JWT by default).
+- `[ProducesResponseType]` / `[ProducesResponseType<T>]` → multiple responses with schemas.
+- XML doc comments (`<summary>`, `<remarks>`, `<param>`) → `summary` / `description` / parameter descriptions.
+- DTO deduplication → `components/schemas` with `$ref`.
 
 ## Quick Start (target)
 
 ```bash
-npx @astronaut/cli analyze ./my-app
+npx @astronaut/cli analyze ./my-aspnet-app
 ```
 
-## Supported Frameworks (planned for v0.1.0)
+## Supported Frameworks
 
-| Language        | Framework                                  | Parser              |
-| --------------- | ------------------------------------------ | ------------------- |
-| JS / TS         | Express                                    | Babel + ts-morph    |
-| Go              | Gin                                        | Go AST (subprocess) |
-| C#              | ASP.NET Core (Controllers + Minimal API)   | Roslyn (subprocess) |
+| Language | Framework                                | Parser              | Status        |
+| -------- | ---------------------------------------- | ------------------- | ------------- |
+| C#       | ASP.NET Core (Controllers + Minimal API) | Roslyn (subprocess) | **MVP**       |
+| JS / TS  | Express                                  | Babel + ts-morph    | Planned (M2)  |
+| Go       | Gin                                      | Go AST (subprocess) | Planned (M2+) |
 
 ## Development
 
-Requires Node 20+, pnpm 10+, Go 1.21+, .NET 8+.
+Requires Node 20+, pnpm 10+, .NET 8+ (Go 1.21+ later, for the Gin parser).
 
 ```bash
 pnpm install
-pnpm gen:proto
-pnpm build:analyzers
-pnpm build
-pnpm test
+pnpm build:analyzers          # builds the .NET analyzer (bash; use scripts/build-analyzers.ps1 on pure Windows)
+pnpm build                    # builds TS packages + CLI
+pnpm test                     # vitest unit + snapshot suite
+
+# Try it out against a checked-in fixture:
+node apps/cli/dist/bin.js analyze fixtures/dotnet/controllers-rich -o out.yaml
 ```
 
 ## Architecture

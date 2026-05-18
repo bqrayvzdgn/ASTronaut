@@ -1,0 +1,30 @@
+{
+  "name": "@astronaut/cli",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ASTronaut CLI — analyse a project, emit OpenAPI 3.1",
+  "type": "module",
+  "bin": {
+    "astronaut": "./dist/bin.js"
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "dev": "node --import tsx/esm src/bin.ts"
+  },
+  "dependencies": {
+    "@astronaut/core": "workspace:*",
+    "@astronaut/generator": "workspace:*",
+    "@astronaut/parser-bridge": "workspace:*",
+    "commander": "^12.1.0",
+    "ora": "^8.1.1",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
