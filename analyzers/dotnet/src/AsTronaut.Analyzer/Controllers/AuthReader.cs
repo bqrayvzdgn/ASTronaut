@@ -11,17 +11,26 @@ public static class AuthReader
 {
     private const string DefaultBearerId = "bearerAuth";
 
-    public static AuthInfo? Resolve(ISymbol method, ISymbol? container)
+    public static AuthInfo? Resolve(ISymbol method, INamedTypeSymbol? container)
     {
-        // [AllowAnonymous] anywhere in the chain wins.
+        // [AllowAnonymous] anywhere in the chain (method → containing class →
+        // base class chain) wins over [Authorize] inherited from a base.
         if (AttributeReader.HasAttribute(method, "AllowAnonymous")) return null;
-        if (container is not null && AttributeReader.HasAttribute(container, "AllowAnonymous"))
-            return null;
+        for (var t = container; t is not null; t = t.BaseType)
+        {
+            if (AttributeReader.HasAttribute(t, "AllowAnonymous")) return null;
+        }
 
         var authAttr = AttributeReader.FindAttribute(method, "Authorize");
-        if (authAttr is null && container is not null)
+        if (authAttr is null)
         {
-            authAttr = AttributeReader.FindAttribute(container, "Authorize");
+            // Walk the base chain: `[Authorize]` on an abstract BaseController
+            // applies to every concrete controller that derives from it.
+            for (var t = container; t is not null; t = t.BaseType)
+            {
+                authAttr = AttributeReader.FindAttribute(t, "Authorize");
+                if (authAttr is not null) break;
+            }
         }
         if (authAttr is null) return null;
 

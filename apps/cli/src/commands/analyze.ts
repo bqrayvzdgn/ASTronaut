@@ -10,6 +10,7 @@ import {
   runAnalyzer,
 } from "@astronaut/parser-bridge";
 import { detectAspnetProject } from "../detect.js";
+import { readProjectInfo } from "../projectInfo.js";
 import { ui } from "../ui.js";
 
 export interface AnalyzeOptions {
@@ -51,9 +52,11 @@ export async function analyzeCommand(rawPath: string, options: AnalyzeOptions): 
     return 1;
   }
 
+  const projectInfo = readProjectInfo(detected.csprojPath);
   const doc = toOpenApi(result, {
-    ...(options.title !== undefined ? { title: options.title } : {}),
-    ...(options.version !== undefined ? { version: options.version } : {}),
+    title: options.title ?? projectInfo.title,
+    version: options.version ?? projectInfo.version,
+    ...(projectInfo.description !== undefined ? { description: projectInfo.description } : {}),
   });
   const serialized = options.json ? toJson(doc) : toYaml(doc);
 
