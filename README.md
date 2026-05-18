@@ -2,11 +2,11 @@
 
 OpenAPI 3.1 specs from your source code — pure AST, no AI.
 
-CLI-first. Webhook flow planned for V2.
+CLI-first.
 
 ## Status
 
-✅ **MVP ready (.NET).** Analyzes ASP.NET Core projects (both Controllers and full Minimal API surface) and emits valid OpenAPI 3.1. See [ADR-0012](./docs/adr/0012-dotnet-first-ordering.md) for the ordering rationale and [`docs/adr/`](./docs/adr/) for all design decisions.
+✅ **MVP ready (.NET).** Analyzes ASP.NET Core projects (both Controllers and full Minimal API surface) and emits valid OpenAPI 3.1.
 
 ### Supported today
 
@@ -26,15 +26,13 @@ npx @astronaut/cli analyze ./my-aspnet-app
 
 ## Supported Frameworks
 
-| Language | Framework                                | Parser              | Status        |
-| -------- | ---------------------------------------- | ------------------- | ------------- |
-| C#       | ASP.NET Core (Controllers + Minimal API) | Roslyn (subprocess) | **MVP**       |
-| JS / TS  | Express                                  | Babel + ts-morph    | Planned (M2)  |
-| Go       | Gin                                      | Go AST (subprocess) | Planned (M2+) |
+| Language | Framework                                | Parser              | Status  |
+| -------- | ---------------------------------------- | ------------------- | ------- |
+| C#       | ASP.NET Core (Controllers + Minimal API) | Roslyn (subprocess) | **MVP** |
 
 ## Development
 
-Requires Node 20+, pnpm 10+, .NET 8+ (Go 1.21+ later, for the Gin parser).
+Requires Node 20+, pnpm 10+, .NET 8+.
 
 ```bash
 pnpm install
@@ -48,4 +46,4 @@ node apps/cli/dist/bin.js analyze fixtures/dotnet/controllers-rich -o out.yaml
 
 ## Architecture
 
-See [`docs/adr/`](./docs/adr/) and the per-package READMEs.
+See the per-package READMEs.
