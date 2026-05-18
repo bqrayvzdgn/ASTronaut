@@ -1,0 +1,166 @@
+{
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/items",
+      "operationId": "listItems",
+      "summary": "List items",
+      "description": "Paginated listing of items.",
+      "tags": ["items"],
+      "queryParams": [
+        {
+          "name": "page",
+          "schema": {
+            "kind": "PRIMITIVE",
+            "primitiveType": "integer",
+            "format": "int32",
+            "constraints": { "minimum": 1 },
+            "defaultValue": "1"
+          },
+          "required": false,
+          "description": "Page number (1-based)"
+        },
+        {
+          "name": "size",
+          "schema": {
+            "kind": "PRIMITIVE",
+            "primitiveType": "integer",
+            "constraints": { "minimum": 1, "maximum": 100 },
+            "defaultValue": "20"
+          },
+          "required": false
+        },
+        {
+          "name": "sort",
+          "schema": {
+            "kind": "PRIMITIVE",
+            "primitiveType": "string",
+            "constraints": { "enumValues": ["\"asc\"", "\"desc\""] },
+            "defaultValue": "\"asc\""
+          },
+          "required": false
+        }
+      ],
+      "responses": [
+        {
+          "status": 200,
+          "description": "Page of items",
+          "schema": {
+            "kind": "OBJECT",
+            "properties": {
+              "items": {
+                "kind": "ARRAY",
+                "items": { "kind": "REFERENCE", "refName": "Item" }
+              },
+              "total": {
+                "kind": "PRIMITIVE",
+                "primitiveType": "integer",
+                "format": "int64"
+              }
+            },
+            "requiredProperties": ["items", "total"]
+          }
+        }
+      ],
+      "auth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT", "id": "bearerAuth" },
+      "source": { "file": "Controllers/ItemsController.cs", "line": 22, "column": 4 }
+    },
+    {
+      "method": "POST",
+      "path": "/items",
+      "tags": ["items"],
+      "requestBody": {
+        "contentType": "application/json",
+        "schema": {
+          "kind": "ONE_OF",
+          "variants": [
+            { "kind": "REFERENCE", "refName": "Item" },
+            {
+              "kind": "OBJECT",
+              "properties": {
+                "name": { "kind": "PRIMITIVE", "primitiveType": "string" },
+                "tagId": {
+                  "kind": "PRIMITIVE",
+                  "primitiveType": "string",
+                  "nullable": true
+                }
+              },
+              "requiredProperties": ["name"]
+            }
+          ]
+        },
+        "required": true
+      },
+      "responses": [
+        {
+          "status": 201,
+          "description": "Created",
+          "schema": { "kind": "REFERENCE", "refName": "Item" },
+          "headers": {
+            "Location": {
+              "name": "Location",
+              "schema": { "kind": "PRIMITIVE", "primitiveType": "string", "format": "uri" },
+              "required": true,
+              "description": "URI of the created item"
+            }
+          }
+        }
+      ],
+      "auth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT", "id": "bearerAuth" },
+      "deprecated": false,
+      "source": { "file": "Controllers/ItemsController.cs", "line": 48, "column": 4 }
+    },
+    {
+      "method": "DELETE",
+      "path": "/items/{id}",
+      "tags": ["items", "admin"],
+      "pathParams": [
+        {
+          "name": "id",
+          "schema": {
+            "kind": "PRIMITIVE",
+            "primitiveType": "string",
+            "format": "uuid"
+          },
+          "required": true
+        }
+      ],
+      "responses": [
+        { "status": 204, "description": "No content" },
+        { "status": 404, "description": "Not found" }
+      ],
+      "auth": { "type": "apiKey", "name": "X-Admin-Key", "in": "header", "id": "adminKey" },
+      "deprecated": true,
+      "source": { "file": "Controllers/ItemsController.cs", "line": 71, "column": 4 }
+    }
+  ],
+  "errors": [],
+  "metadata": {
+    "framework": "aspnet",
+    "frameworkVersion": "8.0.0",
+    "filesScanned": 3,
+    "durationMs": 42,
+    "parserVersion": "0.0.1"
+  },
+  "sharedSchemas": {
+    "Item": {
+      "kind": "OBJECT",
+      "properties": {
+        "id": { "kind": "PRIMITIVE", "primitiveType": "string", "format": "uuid" },
+        "name": { "kind": "PRIMITIVE", "primitiveType": "string" },
+        "price": {
+          "kind": "PRIMITIVE",
+          "primitiveType": "number",
+          "format": "double",
+          "constraints": { "exclusiveMinimum": 0 }
+        },
+        "tags": {
+          "kind": "ARRAY",
+          "items": { "kind": "PRIMITIVE", "primitiveType": "string" },
+          "constraints": { "uniqueItems": true }
+        }
+      },
+      "requiredProperties": ["id", "name", "price"]
+    }
+  }
+}

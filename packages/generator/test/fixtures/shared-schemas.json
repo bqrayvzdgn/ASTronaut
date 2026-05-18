@@ -1,0 +1,93 @@
+{
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/users/{id}",
+      "pathParams": [
+        {
+          "name": "id",
+          "schema": {
+            "kind": "PRIMITIVE",
+            "primitiveType": "integer",
+            "format": "int64"
+          },
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": 200,
+          "description": "User",
+          "schema": { "kind": "REFERENCE", "refName": "User" }
+        },
+        {
+          "status": 404,
+          "description": "Not found",
+          "schema": { "kind": "REFERENCE", "refName": "ProblemDetails" }
+        }
+      ],
+      "source": { "file": "Controllers/UsersController.cs", "line": 18, "column": 4 }
+    },
+    {
+      "method": "PATCH",
+      "path": "/users/{id}",
+      "pathParams": [
+        {
+          "name": "id",
+          "schema": {
+            "kind": "PRIMITIVE",
+            "primitiveType": "integer",
+            "format": "int64"
+          },
+          "required": true
+        }
+      ],
+      "requestBody": {
+        "contentType": "application/json",
+        "schema": { "kind": "REFERENCE", "refName": "UpdateUserDto" },
+        "required": true
+      },
+      "responses": [
+        {
+          "status": 200,
+          "description": "Updated",
+          "schema": { "kind": "REFERENCE", "refName": "User" }
+        }
+      ],
+      "source": { "file": "Controllers/UsersController.cs", "line": 36, "column": 4 }
+    }
+  ],
+  "errors": [],
+  "metadata": {
+    "framework": "aspnet",
+    "filesScanned": 2,
+    "durationMs": 22,
+    "parserVersion": "0.0.1"
+  },
+  "sharedSchemas": {
+    "User": {
+      "kind": "OBJECT",
+      "properties": {
+        "id": { "kind": "PRIMITIVE", "primitiveType": "integer", "format": "int64" },
+        "email": { "kind": "PRIMITIVE", "primitiveType": "string", "format": "email" },
+        "name": { "kind": "PRIMITIVE", "primitiveType": "string", "nullable": true }
+      },
+      "requiredProperties": ["id", "email"]
+    },
+    "UpdateUserDto": {
+      "kind": "OBJECT",
+      "properties": {
+        "email": { "kind": "PRIMITIVE", "primitiveType": "string", "format": "email" },
+        "name": { "kind": "PRIMITIVE", "primitiveType": "string" }
+      }
+    },
+    "ProblemDetails": {
+      "kind": "OBJECT",
+      "properties": {
+        "title": { "kind": "PRIMITIVE", "primitiveType": "string" },
+        "status": { "kind": "PRIMITIVE", "primitiveType": "integer" },
+        "detail": { "kind": "PRIMITIVE", "primitiveType": "string" }
+      }
+    }
+  }
+}

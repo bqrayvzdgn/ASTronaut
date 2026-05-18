@@ -1,0 +1,27 @@
+{
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/health",
+      "summary": "Healthcheck",
+      "responses": [
+        {
+          "status": 200,
+          "description": "OK"
+        }
+      ],
+      "source": {
+        "file": "src/app.cs",
+        "line": 12,
+        "column": 4
+      }
+    }
+  ],
+  "errors": [],
+  "metadata": {
+    "framework": "aspnet",
+    "filesScanned": 1,
+    "durationMs": 8,
+    "parserVersion": "0.0.1"
+  }
+}

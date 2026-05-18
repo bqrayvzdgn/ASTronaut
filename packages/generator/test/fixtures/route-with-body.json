@@ -1,0 +1,64 @@
+{
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/users",
+      "operationId": "createUser",
+      "tags": ["users"],
+      "requestBody": {
+        "contentType": "application/json",
+        "schema": {
+          "kind": "OBJECT",
+          "properties": {
+            "email": {
+              "kind": "PRIMITIVE",
+              "primitiveType": "string",
+              "format": "email"
+            },
+            "age": {
+              "kind": "PRIMITIVE",
+              "primitiveType": "integer",
+              "format": "int32",
+              "constraints": { "minimum": 18, "maximum": 120 }
+            }
+          },
+          "requiredProperties": ["email"]
+        },
+        "required": true
+      },
+      "responses": [
+        {
+          "status": 201,
+          "description": "Created",
+          "schema": {
+            "kind": "OBJECT",
+            "properties": {
+              "id": {
+                "kind": "PRIMITIVE",
+                "primitiveType": "integer",
+                "format": "int64"
+              }
+            },
+            "requiredProperties": ["id"]
+          }
+        },
+        {
+          "status": 400,
+          "description": "Bad request"
+        }
+      ],
+      "source": {
+        "file": "Controllers/UsersController.cs",
+        "line": 24,
+        "column": 4
+      }
+    }
+  ],
+  "errors": [],
+  "metadata": {
+    "framework": "aspnet",
+    "filesScanned": 1,
+    "durationMs": 14,
+    "parserVersion": "0.0.1"
+  }
+}

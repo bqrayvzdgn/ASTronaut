@@ -1,0 +1,28 @@
+{
+  "name": "@astronaut/generator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ASTronaut OpenAPI 3.1 generator — ParseResult to YAML/JSON",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@astronaut/core": "workspace:*",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
