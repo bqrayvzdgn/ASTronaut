@@ -402,53 +402,63 @@ Aşağıdakiler koddan **doğrulanmış** davranışlardır (varsayım değil). 
 en yüksek getiri bunlarda; her biri "çökme yok + sessiz yanlış üretme yok" ekseninde
 test edilmeli.
 
+> **Round 1 durumu (PR #8–#17 merge edildi).** U1–U24'ün çoğu 10 workstream'de
+> koda alındı; aşağıdaki **Durum** sütunu güncel. ✅ = düzeltildi, ⚠️ = kısmi
+> (kalanı ertelendi), — = değişmedi/bilgi. **Regresyon testleri bu turda
+> yazılmadı** (kod-öncelikli tercih) — her ✅ satırı için canlı test hâlâ değerli
+> ve sonraki turda xUnit/e2e testiyle kilitlenmeli.
+
 ### U.1 — Kesin bug'lar (yanlış çıktı üretir)
 
-| # | Bulgu | Etki | İlgili senaryo |
-| --- | --- | --- | --- |
-| U1 | `TypeClassifier.IsSimpleType` enum'ı **simple** saymıyor | `[FromQuery]`/route **enum** parametresi body'ye bağlanır | E15, D-enum |
-| U2 | DI **concrete class** servisi (`AppDbContext`) interface değil → servis sayılmaz | body parametresi olarak sızar | E11b |
-| U3 | `[Required]` DataAnnotation required'lık için **kullanılmıyor** (yalnız nullability) | `[Required] string? x` required olmaz | L1b |
-| U4 | Public **field**'lar okunmuyor (yalnız property) | DTO alanları şemadan kaybolur | I20b |
-| U5 | Tuple / `ValueTuple` / `IAsyncEnumerable<T>` → boş `{}` OBJECT | tip bilgisi kaybı | I20, I20c |
-| U6 | Generic `JsonStringEnumConverter<T>` isim eşleşmiyor | enum string'e çevrilmez | J2b |
-| U7 | `JsonStringEnumConverter` **salt sözdizimsel** taranıyor (yorum/test dâhil) | tüm enum'lar yanlışlıkla string olur | J2c |
-| U8 | `[NonAction]` yoksayılıyor | Http attribute'lu ise yine route üretir | B15 |
-| U9 | Non-string `Dictionary` key sessizce string-key'e indirgeniyor | yanlış key tipi | I10 |
+| # | Bulgu | Durum (Round 1) |
+| --- | --- | --- |
+| U1 | `TypeClassifier.IsSimpleType` enum'ı **simple** saymıyor → enum param body'ye bağlanır | ✅ WS1/#8 (enum artık query/path) |
+| U2 | DI **concrete class** servisi interface değil → body'ye sızar | ✅ WS1/#8 (bindable-yüzeysiz sınıf = servis heuristiği) |
+| U3 | `[Required]` DataAnnotation required'lık için kullanılmıyor | ✅ WS4/#13 (`HasRequired` + nullability) |
+| U4 | Public **field**'lar okunmuyor | ✅ WS4/#13 (`[JsonInclude]` field'ları dahil — STJ-doğru) |
+| U5 | Tuple / `IAsyncEnumerable<T>` → boş `{}` OBJECT | ✅ WS4/#13 (tuple→OBJECT, IAsyncEnumerable→ARRAY) |
+| U6 | Generic `JsonStringEnumConverter<T>` isim eşleşmiyor | ✅ WS5/#9 (semantik tip çözümü) |
+| U7 | `JsonStringEnumConverter` salt sözdizimsel taranıyor | ✅ WS5/#9 (semantik → false positive elenir) |
+| U8 | `[NonAction]` yoksayılıyor | ✅ WS2/#16 (+ `[ApiExplorerSettings(IgnoreApi)]`) |
+| U9 | Non-string `Dictionary` key indirgeniyor | ✅ WS4/#13 (çökme yok, doğrulandı + not) |
 
 ### U.2 — Kesin boşluklar (desteklenmiyor; graceful olmalı)
 
-| # | Bulgu | Beklenen canlı davranış | İlgili |
-| --- | --- | --- | --- |
-| U10 | Auth **yalnızca** `http/bearer/JWT` — apiKey/oauth2/oidc/mutualTLS, roller/policy/scope yok | çökme yok; bearer'a düşer | M7–M12 |
-| U11 | Base/abstract controller'dan **miras action**'lar yürünmez | route eksik, çökme yok | B12 |
-| U12 | Minimal API: `MapMethods`, `Map`, `MapControllers`, `[AsParameters]`, complex-`[FromQuery]` flatten, `WithOpenApi`/endpoint filter | eksik, çökme yok | C9–C13, E12, E18 |
-| U13 | `object`/`JsonElement`/`JsonNode`/interface/struct → serbest-form boş `{}` | valid ama zayıf şema | I19, I20d |
-| U14 | `[Range]` exclusive bound & .NET 8 doğrulama attribute'ları (`[Length]`, `[AllowedValues]`…) yok | constraint yok, çökme yok | L11–L12 |
-| U15 | Return unwrap **4 seviye** ve sadece `Task/ValueTask/ActionResult<T>` | diğer awaitable'lar çözülmez | G7–G8 |
-| U16 | XML doc: `<response code>` okunmuyor; DTO property doc'ları okunmuyor | eksik açıklama | N6, N8 |
+| # | Bulgu | Durum (Round 1) |
+| --- | --- | --- |
+| U10 | Auth **yalnızca** `http/bearer/JWT` | ✅ WS6/#11 (apiKey/oauth2/openIdConnect eşlemesi; flows/scope ertelendi) |
+| U11 | Base/abstract controller miras action'ları yürünmez | ✅ WS2/#16 (inheritance zinciri + dedup) |
+| U12 | Minimal API: `MapMethods`/`Map`/`[AsParameters]`/complex-`[FromQuery]`/group-auth | ✅ WS3/#17 (⚠️ `WithOpenApi`/endpoint filter hâlâ ertelendi) |
+| U13 | `object`/`JsonElement`/interface/struct → boş `{}` | — tasarım gereği serbest-form (değişmedi) |
+| U14 | `[Range]` exclusive bound & .NET 8 attribute'ları | ✅ WS4/#13 (exclusive range, `[Length]`, DataType tablosu; `[AllowedValues]` ertelendi) |
+| U15 | Return unwrap 4 seviye, sınırlı awaitable | ⚠️ WS7/#14 (çok daha fazla result tipi eklendi; unwrap derinliği ertelendi) |
+| U16 | XML doc: `<response code>` / DTO property doc'ları okunmuyor | ✅ WS8/#12 + WS2/#16 (`<response code>` + inline tag; ⚠️ DTO property doc ertelendi) |
 
 ### U.3 — Kırılganlık / robustluk noktaları
 
-| # | Bulgu | Canlı testte kontrol |
+| # | Bulgu | Durum (Round 1) |
 | --- | --- | --- |
-| U17 | Çoklu csproj/sln → **first-wins, non-deterministik** (dosya sistemi sırası) | aynı repoda tekrar çalıştır, aynı proje mi seçiliyor | A6b, Q7 |
-| U18 | `dotnet` PATH'te yoksa → **tipsiz** "Unexpected error" (dostça `AnalyzerNotFoundError` değil) | anlaşılır mesaj mı | P7 |
-| U19 | Analyzer 120s'de timeout → kill → exit 124 → `AnalyzerCrashedError` | büyük projede tetikleniyor mu | P6 |
-| U20 | `REFERENCE` şeması `refName`'siz → generator **hard throw** → CLI "Unexpected error" | drift durumunda çökme | P8 |
-| U21 | Aynı path+method iki route → generator'da **son yazan kazanır** (sessiz) | çakışma sessizce mi kayboluyor | C17, Q |
-| U22 | Aynı simple-name farklı namespace DTO → `Order`/`Order2` (namespace yok, sıraya bağlı) | isim kararlılığı | I27, R3 |
-| U23 | `--strict` mesajı hata **sayısı yerine toplam** diagnostic sayısını basıyor (kozmetik) | mesaj doğruluğu | O2 |
-| U24 | Controller + Minimal API aynı route'u tanımlarsa **dedup yok** → iki kez emit | çift operation | C17 |
+| U17 | Çoklu csproj/sln → non-deterministik seçim | ✅ WS9/#10 (`detect.ts`) + WS10/#15 (`ProjectLoader`, sıralı + W007) |
+| U18 | `dotnet` yoksa tipsiz "Unexpected error" | ✅ WS9/#10 (dostça `DotnetNotFoundError`) |
+| U19 | Analyzer 120s timeout → exit 124 → `AnalyzerCrashedError` | — mevcut davranış (bilgi; değişmedi) |
+| U20 | `REFERENCE` `refName`'siz → generator hard throw | ✅ WS9/#10 (guard: boş `{}`) |
+| U21 | Aynı path+method iki route → sessiz overwrite | ✅ WS9/#10 (ilkini koru + uyarı) |
+| U22 | Aynı simple-name farklı namespace DTO adı sıraya bağlı | ⚠️ WS10/#15 (namespace-türevli kararlı ad; hangi tipin bare ad aldığı hâlâ sıraya bağlı — not) |
+| U23 | `--strict` mesajı toplam diagnostic basıyor | ✅ WS9/#10 (error sayısı) |
+| U24 | Controller + Minimal aynı route → dedup yok | ✅ WS10/#15 (`(method,path)` dedup + W006) |
 
-### U.4 — Diagnostic envanteri (tam liste)
+### U.4 — Diagnostic envanteri (Round 1 sonrası)
 
 | Kod | Anlamı | Tetikleyici |
 | --- | --- | --- |
 | **W001** `DynamicRoutePath` | route path literal değil | `MapX(nonLiteral, ...)` → route atlanır |
 | **W002** `UnresolvedHandler` | method-ref handler çözülemedi | route emit edilir, param/response eksik olabilir |
 | **W003** `WorkspaceLoad` | workspace/solution yükleme sorunu | `.sln`/`.slnx` açılamadı → csproj taramasına düşüş |
-| **E0xx** | — | **tanımlı değil**; hard failure yalnız stderr + non-zero exit |
+| **W004** `SkippedController` | atlanan MVC controller | *tanımlı* (emisyon sonraki turda) |
+| **W005** `UnresolvedResult` | çözülemeyen MVC result body | *tanımlı* (emisyon sonraki turda) |
+| **W006** `DuplicateRoute` | controller+minimal aynı route | dedup edilen route (U24) |
+| **W007** `MultipleProjects` | dizinde birden çok proje | deterministik seçilen + atlananlar (U17) |
+| **E001** `ProjectLoadFailed` | proje/derleme yüklenemedi | `--strict` ile yakalanabilir hata (WS10/#15) |
 
 ---
 
@@ -464,9 +474,21 @@ Kapsamı gerçekçi zorlamak için farklı stiller:
 
 ## Öncelik sırası (canlı testte ilk bakılacaklar)
 
-1. **U.1 kesin bug'lar (U1–U9)** — yanlış çıktı üretiyorlar; en yüksek öncelik.
-2. **U.3 robustluk (U17–U24)** — çökme/sessiz-kayıp/non-determinizm riski.
-3. **U.2 kesin boşluklar (U10–U16)** — "graceful mı" kontrolü (çökmeden atlamalı).
-4. **❓ dönüş tipi çıkarımı** (G7–G20) — gerçek kod tabanlarında en çeşitli alan.
-5. **❓ şema/tip kapsama** (I13–I19, J4–J7, K5–K7) — primitive/format doğruluğu.
-6. **❓ solution** (R1–R7) — çoklu proje canlıda ilk kez zorlanacak.
+**Round 1 sonrası** — U1–U24'ün çoğu koda alındı (PR #8–#17). Canlı test artık
+öncelikle bu düzeltmeleri **doğrular** ve regresyon testi olmayan alanları avlar:
+
+1. **Round-1 fix doğrulaması (U1–U24 ✅ satırları)** — düzeltmeler gerçek projelerde
+   beklendiği gibi mi çalışıyor; regresyon testi henüz **yok**, bu yüzden canlı en kritik güvence.
+2. **⚠️ kısmi kalanlar** (U12 `WithOpenApi`, U15 unwrap derinliği, U16 DTO property doc,
+   U22 bare-ad sırası) — sınırların gerçekten graceful olduğunu doğrula.
+3. **❓ dönüş tipi çıkarımı** (G7–G20) — gerçek kod tabanlarında en çeşitli alan.
+4. **❓ şema/tip kapsama** (I13–I19, J4–J7, K5–K7) — primitive/format doğruluğu.
+5. **❓ solution** (R1–R7) — çoklu proje canlıda ilk kez zorlanacak.
+
+## Sonraki tur (deferred)
+
+- **Regresyon test turu:** her ✅ fix için `TestCompilation.Walk` tabanlı xUnit +
+  gerekli e2e fixture (senaryo katalogundaki ✗→✅ geçişini kilitler).
+- **Kalan özellikler:** OAuth2 flows/OpenIdConnect URL, `[Authorize]` roles/policy→scope,
+  minimal `WithOpenApi`/endpoint filter, return unwrap derinliği, DTO property XML doc'ları,
+  MVC-tarafı W004/W005 emisyonu.
