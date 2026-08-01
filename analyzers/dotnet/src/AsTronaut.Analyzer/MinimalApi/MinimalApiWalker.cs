@@ -37,6 +37,7 @@ public sealed class MinimalApiWalker
     private readonly SchemaContext _schemaContext;
     private readonly List<RouteInfo> _routes = new();
     private readonly List<ParseError> _errors = new();
+    private readonly bool _stringEnums;
     private readonly Dictionary<ISymbol, string> _groupPrefixes =
         new(SymbolEqualityComparer.Default);
 
@@ -45,6 +46,7 @@ public sealed class MinimalApiWalker
         _compilation = compilation;
         _repoRoot = repoRoot;
         _schemaContext = schemaContext;
+        _stringEnums = EnumConfig.UsesStringEnumsByDefault(compilation);
     }
 
     public IReadOnlyList<RouteInfo> Routes => _routes;
@@ -222,7 +224,7 @@ public sealed class MinimalApiWalker
         var headerParams = new List<ParamInfo>();
         BodyInfo? body = null;
 
-        var typeMapper = new TypeToSchema(_schemaContext);
+        var typeMapper = new TypeToSchema(_schemaContext, _stringEnums);
         var handlerParams = ExtractHandlerParameters(handler, model);
         ITypeSymbol? returnType = ExtractHandlerReturnType(handler, model);
 

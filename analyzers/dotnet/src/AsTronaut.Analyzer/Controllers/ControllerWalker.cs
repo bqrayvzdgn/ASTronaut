@@ -33,12 +33,14 @@ public sealed class ControllerWalker
     private readonly List<ParseError> _errors = new();
     private readonly string _repoRoot;
     private readonly SchemaContext _schemaContext;
+    private readonly bool _stringEnums;
 
     public ControllerWalker(Compilation compilation, string repoRoot, SchemaContext schemaContext)
     {
         _compilation = compilation;
         _repoRoot = repoRoot;
         _schemaContext = schemaContext;
+        _stringEnums = EnumConfig.UsesStringEnumsByDefault(compilation);
     }
 
     public IReadOnlyList<RouteInfo> Routes => _routes;
@@ -167,7 +169,7 @@ public sealed class ControllerWalker
         var headerParams = new List<ParamInfo>();
         BodyInfo? body = null;
 
-        var typeMapper = new TypeToSchema(_schemaContext);
+        var typeMapper = new TypeToSchema(_schemaContext, _stringEnums);
 
         foreach (var p in method.Parameters)
         {

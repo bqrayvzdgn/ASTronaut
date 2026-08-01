@@ -10,10 +10,12 @@ namespace AsTronaut.Analyzer.SchemaInference;
 public sealed class TypeToSchema
 {
     private readonly SchemaContext _ctx;
+    private readonly bool _stringEnumsByDefault;
 
-    public TypeToSchema(SchemaContext ctx)
+    public TypeToSchema(SchemaContext ctx, bool stringEnumsByDefault = false)
     {
         _ctx = ctx;
+        _stringEnumsByDefault = stringEnumsByDefault;
     }
 
     public Schema Map(ITypeSymbol type)
@@ -102,17 +104,11 @@ public sealed class TypeToSchema
                 };
         }
 
-        // Enums → string with enumValues (names).
+        // Enums → integer (System.Text.Json default) with numeric enum values,
+        // or string with member names when a string-enum converter applies.
         if (type.TypeKind == TypeKind.Enum && type is INamedTypeSymbol enumType)
         {
-            var names = enumType.GetMembers().OfType<IFieldSymbol>()
-                .Where(f => f.IsConst).Select(f => $"\"{f.Name}\"").ToList();
-            return new Schema
-            {
-                Kind = "PRIMITIVE",
-                PrimitiveType = "string",
-                Constraints = names.Count > 0 ? new Constraints { EnumValues = names } : null,
-            };
+            return BuildEnumSchema(enumType);
         }
 
         // Arrays.
@@ -155,6 +151,57 @@ public sealed class TypeToSchema
         }
         // Interface / struct fallback → empty OBJECT (caller decides).
         return new Schema { Kind = "OBJECT" };
+    }
+
+    private Schema BuildEnumSchema(INamedTypeSymbol enumType)
+    {
+        var members = enumType.GetMembers().OfType<IFieldSymbol>().Where(f => f.IsConst).ToList();
+        var asString = _stringEnumsByDefault || HasStringEnumConverter(enumType);
+
+        if (asString)
+        {
+            var names = members.Select(f => $"\"{f.Name}\"").ToList();
+            return new Schema
+            {
+                Kind = "PRIMITIVE",
+                PrimitiveType = "string",
+                Constraints = names.Count > 0 ? new Constraints { EnumValues = names } : null,
+            };
+        }
+
+        // Numeric enum: emit the underlying constant values as JSON number literals.
+        var values = members
+            .Select(f => f.ConstantValue?.ToString() ?? "0")
+            .ToList();
+        var format = enumType.EnumUnderlyingType?.SpecialType
+            is SpecialType.System_Int64 or SpecialType.System_UInt64
+                ? "int64"
+                : "int32";
+        return new Schema
+        {
+            Kind = "PRIMITIVE",
+            PrimitiveType = "integer",
+            Format = format,
+            Constraints = values.Count > 0 ? new Constraints { EnumValues = values } : null,
+        };
+    }
+
+    // A [JsonConverter(typeof(JsonStringEnumConverter))] (System.Text.Json) or
+    // [JsonConverter(typeof(StringEnumConverter))] (Newtonsoft) on the enum type
+    // forces string serialization regardless of the global default.
+    private static bool HasStringEnumConverter(INamedTypeSymbol enumType)
+    {
+        var attr = AttributeReader.FindAttribute(enumType, "JsonConverter");
+        if (attr is null) return false;
+        foreach (var arg in attr.ConstructorArguments)
+        {
+            if (arg.Value is INamedTypeSymbol conv
+                && conv.Name.Contains("StringEnum", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private Schema BuildClassSchema(INamedTypeSymbol type)
