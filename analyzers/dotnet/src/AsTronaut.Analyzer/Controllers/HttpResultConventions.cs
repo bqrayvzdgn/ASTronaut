@@ -22,6 +22,18 @@ public static class HttpResultConventions
             Status = status.Value,
             Description = ResponseTypeReader.DescribeStatusPublic(status.Value),
         };
+
+        // Non-JSON bodies: file downloads carry a binary payload; Content() writes
+        // a text/plain string. Both set a content type but skip JSON-schema inference.
+        if (IsFileHelper(helper))
+        {
+            return response with { Schema = BinarySchema(), ContentType = "application/octet-stream" };
+        }
+        if (helper == "Content")
+        {
+            return response with { ContentType = "text/plain" };
+        }
+
         var valueType = ValueType(helper, inv, model);
         if (valueType is not null && valueType.SpecialType != SpecialType.System_Void)
         {
@@ -61,9 +73,23 @@ public static class HttpResultConventions
         "Conflict" => 409,
         "UnprocessableEntity" => 422,
         "Problem" => 500,
+        // File downloads → 200 with a binary body (handled in Map).
+        "File" or "PhysicalFile" or "FileStreamResult" or "FileContentResult" => 200,
+        // Redirects → 302 (permanent variants → 301), no body.
+        "Redirect" or "LocalRedirect" => 302,
+        "RedirectPermanent" or "LocalRedirectPermanent" => 301,
+        // Json(x) behaves like Ok(x); Content(x) → 200 text/plain (handled in Map).
+        "Json" or "Content" => 200,
         "StatusCode" => ReadStatusCodeArg(inv, model),
         _ => null,
     };
+
+    private static bool IsFileHelper(string helper) => helper is
+        "File" or "PhysicalFile" or "FileStreamResult" or "FileContentResult";
+
+    // A binary payload schema, matching how IFormFile bodies are represented.
+    private static Schema BinarySchema() =>
+        new() { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "binary" };
 
     private static int? ReadStatusCodeArg(InvocationExpressionSyntax inv, SemanticModel model)
     {
@@ -80,7 +106,7 @@ public static class HttpResultConventions
         var args = inv.ArgumentList.Arguments;
         ExpressionSyntax? valueArg = helper switch
         {
-            "Ok" or "NotFound" or "BadRequest" or "Conflict" or "UnprocessableEntity"
+            "Ok" or "Json" or "NotFound" or "BadRequest" or "Conflict" or "UnprocessableEntity"
                 => args.Count >= 1 ? args[0].Expression : null,
             "Created" or "CreatedAtAction" or "CreatedAtRoute"
             or "Accepted" or "AcceptedAtAction" or "AcceptedAtRoute"
