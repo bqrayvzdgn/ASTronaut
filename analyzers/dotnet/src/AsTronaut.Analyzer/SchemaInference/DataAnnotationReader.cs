@@ -13,6 +13,8 @@ namespace AsTronaut.Analyzer.SchemaInference;
 //   [MinLength(N)]                    → minLength = N
 //   [MaxLength(N)]                    → maxLength = N
 //   [Range(min, max)]                 → minimum/maximum
+//   [Range(.., MinimumIsExclusive=true)] → exclusiveMinimum/exclusiveMaximum
+//   [Length(min, max)]                → minItems/maxItems (collection length)
 //   [RegularExpression(pattern)]      → pattern
 //   [EmailAddress]                    → format = "email"
 //   [Url]                             → format = "uri"
@@ -83,14 +85,33 @@ public static class DataAnnotationReader
                     break;
                 case "Range":
                     var (rmin, rmax) = ReadRange(attr);
+                    // .NET 8+ RangeAttribute can mark either bound exclusive.
+                    var minExclusive = GetNamedBool(attr, "MinimumIsExclusive") == true;
+                    var maxExclusive = GetNamedBool(attr, "MaximumIsExclusive") == true;
                     if (rmin.HasValue)
                     {
-                        constraints.Minimum = rmin.Value;
+                        if (minExclusive) constraints.ExclusiveMinimum = rmin.Value;
+                        else constraints.Minimum = rmin.Value;
                         touched = true;
                     }
                     if (rmax.HasValue)
                     {
-                        constraints.Maximum = rmax.Value;
+                        if (maxExclusive) constraints.ExclusiveMaximum = rmax.Value;
+                        else constraints.Maximum = rmax.Value;
+                        touched = true;
+                    }
+                    break;
+                case "Length":
+                    // System.ComponentModel.DataAnnotations.LengthAttribute(min, max)
+                    // constrains collection/string length → minItems/maxItems.
+                    if (TryGetInt(attr.ConstructorArguments, 0, out var lmin))
+                    {
+                        constraints.MinItems = lmin;
+                        touched = true;
+                    }
+                    if (TryGetInt(attr.ConstructorArguments, 1, out var lmax))
+                    {
+                        constraints.MaxItems = lmax;
                         touched = true;
                     }
                     break;
@@ -126,6 +147,18 @@ public static class DataAnnotationReader
         };
     }
 
+    // True when the member carries a [Required] annotation
+    // (System.ComponentModel.DataAnnotations). Required-ness driven by an explicit
+    // annotation overrides nullability-based inference at the call site.
+    public static bool HasRequired(ISymbol owner)
+    {
+        foreach (var attr in owner.GetAttributes())
+        {
+            if (AttrName(attr) == "Required") return true;
+        }
+        return false;
+    }
+
     private static string AttrName(AttributeData attr)
     {
         var n = attr.AttributeClass?.Name ?? "";
@@ -154,6 +187,15 @@ public static class DataAnnotationReader
         return null;
     }
 
+    private static bool? GetNamedBool(AttributeData attr, string name)
+    {
+        foreach (var pair in attr.NamedArguments)
+        {
+            if (pair.Key == name && pair.Value.Value is bool b) return b;
+        }
+        return null;
+    }
+
     private static (double? Min, double? Max) ReadRange(AttributeData attr)
     {
         if (attr.ConstructorArguments.Length < 2) return (null, null);
@@ -178,17 +220,23 @@ public static class DataAnnotationReader
         var arg = attr.ConstructorArguments[0];
         if (arg.Type?.TypeKind != TypeKind.Enum) return null;
         if (arg.Value is not int ordinal) return null;
-        // System.ComponentModel.DataAnnotations.DataType enum members.
+        // System.ComponentModel.DataAnnotations.DataType enum members, by ordinal:
+        //   Custom=0, DateTime=1, Date=2, Time=3, Duration=4, PhoneNumber=5,
+        //   Currency=6, Text=7, Html=8, MultilineText=9, EmailAddress=10,
+        //   Password=11, Url=12, ImageUrl=13, CreditCard=14, PostalCode=15,
+        //   Upload=16. Members without a sensible OpenAPI format map to null.
         return ordinal switch
         {
-            2 => "date-time",
-            3 => "date",
-            4 => "time",
-            5 => "duration",
-            6 => "phone",
-            10 => "uri",
-            11 => "email",
-            12 => "password",
+            1 => "date-time",
+            2 => "date",
+            3 => "time",
+            4 => "duration",
+            5 => "phone",
+            10 => "email",
+            11 => "password",
+            12 => "uri",
+            13 => "uri",
+            16 => "binary",
             _ => null,
         };
     }
