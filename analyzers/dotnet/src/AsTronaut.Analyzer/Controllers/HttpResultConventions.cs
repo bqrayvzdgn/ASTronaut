@@ -6,9 +6,9 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace AsTronaut.Analyzer.Controllers;
 
 // Shared mapping from an ASP.NET result-helper invocation (Ok(dto), NotFound(),
-// CreatedAtRoute(.., dto), StatusCode(n, x), ...) to a ResponseInfo. Used by both
-// ControllerResultReader (ControllerBase helpers) and MinimalApiResultReader
-// (Results/TypedResults) so the status table and body-argument rules live once.
+// CreatedAtRoute(.., dto), StatusCode(n, x), ...) to a ResponseInfo. Used by
+// ControllerResultReader (ControllerBase helpers) so the status table and
+// body-argument rules live in one place.
 public static class HttpResultConventions
 {
     public static ResponseInfo? Map(

@@ -5,8 +5,8 @@ namespace AsTronaut.Analyzer.SchemaInference;
 
 // Cross-route DTO dedup. Each named class type seen by TypeToSchema gets a single
 // entry in SharedSchemas; subsequent encounters return a REFERENCE to that entry.
-// The same instance is shared between ControllerWalker and MinimalApiWalker so a
-// DTO used by both styles is hoisted exactly once.
+// One instance is shared across every project's ControllerWalker so a DTO used by
+// more than one project is hoisted exactly once.
 public sealed class SchemaContext
 {
     public Dictionary<string, Schema> SharedSchemas { get; } = new();

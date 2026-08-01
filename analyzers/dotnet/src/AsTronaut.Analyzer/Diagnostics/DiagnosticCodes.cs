@@ -6,12 +6,10 @@ namespace AsTronaut.Analyzer.Diagnostics;
 // "E" = error (the run failed to produce meaningful output; `--strict` fails).
 public static class DiagnosticCodes
 {
-    // A Map* endpoint whose route path is not a string literal was skipped.
-    public const string DynamicRoutePath = "W001";
-
-    // A method-reference handler could not be resolved to a symbol; the route is
-    // still emitted but its parameters/responses may be incomplete.
-    public const string UnresolvedHandler = "W002";
+    // W001 (DynamicRoutePath) and W002 (UnresolvedHandler) were emitted only by the
+    // minimal-API walker and W006 (DuplicateRoute) only by the controller/minimal
+    // route merge; all three were retired when Minimal API support was removed. The
+    // codes are left unassigned rather than reused so historical logs stay unambiguous.
 
     // MSBuild reported a workspace load failure; the compilation may be partial.
     public const string WorkspaceLoad = "W003";
@@ -23,10 +21,6 @@ public static class DiagnosticCodes
     // An MVC action's result body could not be resolved to a concrete type.
     // Reserved for emission by the controller walker in a separate workstream.
     public const string UnresolvedResult = "W005";
-
-    // A route with the same (Method, Path) was emitted by both the controller and
-    // minimal-API walkers; the duplicate was dropped (first occurrence kept).
-    public const string DuplicateRoute = "W006";
 
     // Multiple candidate projects/solutions were found in a directory scan; one
     // was selected deterministically (Ordinal-first).

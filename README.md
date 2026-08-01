@@ -8,20 +8,18 @@ CLI-first.
 
 ## Status
 
-✅ **MVP ready (.NET).** Analyzes ASP.NET Core projects (Controllers and the full Minimal API surface), across a whole solution, and emits valid OpenAPI 3.1.
+✅ **MVP ready (.NET).** Analyzes ASP.NET Core Controller projects, across a whole solution, and emits valid OpenAPI 3.1.
 
 ### Supported today
 
 **Routing**
 
 - Controllers: `[ApiController]`, `[Route]`, `[HttpGet/Post/Put/Delete/Patch]`, route templates with constraints (`{id:int:min(1)}`, `{slug:alpha:length(3,40)}`, `{uuid:guid}`), `[FromBody/Query/Route/Header/Form]`.
-- Minimal API: `MapGet/Post/Put/Delete/Patch`, nested `MapGroup`, fluent chain (`WithName`, `WithTags`, `WithSummary`, `WithDescription`, `RequireAuthorization`, `AllowAnonymous`), inline lambda + method-reference handlers.
 - Multiple projects: analyzes a whole `.sln`/`.slnx` (every C# project, DTOs hoisted once) or a single `.csproj`.
 
 **Requests & responses**
 
 - Return type → response schema; `[ProducesResponseType]` / `[ProducesResponseType<T>]` → multiple responses.
-- Minimal API `TypedResults`: `Results<Ok<T>, NotFound, ...>` and single typed results → one response per member.
 - `[Consumes]` / `[Produces]` → multiple request/response content types.
 - `IFormFile` / `[FromForm]` → `multipart/form-data` with binary schema.
 
@@ -38,7 +36,7 @@ CLI-first.
 
 - `[Authorize]` / `[AllowAnonymous]` → `securitySchemes` (bearer JWT by default).
 - XML doc comments (`<summary>`, `<remarks>`, `<param>`) → `summary` / `description` / parameter descriptions.
-- Endpoints or projects the analyzer can't fully parse are reported as structured warnings (`W001`–`W003`) instead of being dropped silently; `--strict` fails the run on errors.
+- Endpoints or projects the analyzer can't fully parse are reported as structured warnings (e.g. `W003`, `W007`) instead of being dropped silently; `--strict` fails the run on errors.
 
 ## Quick Start (target)
 
@@ -51,7 +49,7 @@ npx @astronaut/cli analyze ./my-aspnet-app
 
 | Language | Framework                                | Parser              | Status  |
 | -------- | ---------------------------------------- | ------------------- | ------- |
-| C#       | ASP.NET Core (Controllers + Minimal API) | Roslyn (subprocess) | **MVP** |
+| C#       | ASP.NET Core (Controllers)               | Roslyn (subprocess) | **MVP** |
 
 ## Development
 
