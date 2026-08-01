@@ -56,15 +56,42 @@ function deriveTitle(result: ParseResult): string {
 function buildPaths(result: ParseResult): Record<string, PathItemObject> | undefined {
   if (result.routes.length === 0) return undefined;
   const paths: Record<string, PathItemObject> = {};
+  const usedOperationIds = new Set<string>();
   for (const route of result.routes) {
     const item = paths[route.path] ?? {};
     const verb = HTTP_METHOD_TO_OPENAPI[route.method];
     if (!verb) continue;
+    const op = routeToOperation(route);
+    if (op.operationId)
+      op.operationId = uniqueOperationId(op.operationId, route.tags, usedOperationIds);
     // biome-ignore lint/suspicious/noExplicitAny: PathItemObject's verb keys all hold OperationObject
-    (item as any)[verb] = routeToOperation(route);
+    (item as any)[verb] = op;
     paths[route.path] = item;
   }
   return paths;
+}
+
+// operationId must be unique across the whole document (many controllers share
+// action names like "Get"). Keep the first as-is; qualify a collision with its
+// tag (e.g. "Rating_Get"), then fall back to a numeric suffix.
+function uniqueOperationId(base: string, tags: string[] | undefined, used: Set<string>): string {
+  if (!used.has(base)) {
+    used.add(base);
+    return base;
+  }
+  const tag = tags?.[0];
+  if (tag) {
+    const qualified = `${tag}_${base}`;
+    if (!used.has(qualified)) {
+      used.add(qualified);
+      return qualified;
+    }
+  }
+  let n = 2;
+  while (used.has(`${base}_${n}`)) n++;
+  const result = `${base}_${n}`;
+  used.add(result);
+  return result;
 }
 
 function buildComponents(result: ParseResult): ComponentsObject | undefined {

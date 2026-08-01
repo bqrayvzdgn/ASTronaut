@@ -52,6 +52,33 @@ describe("multiple content types", () => {
     ]);
   });
 
+  it("makes operationIds unique across the document", () => {
+    const route = (path: string, tag: string) => ({
+      method: "GET" as const,
+      path,
+      operationId: "Get",
+      tags: [tag],
+      source: { file: "a.cs", line: 1, column: 1 },
+      responses: [{ status: 200, description: "OK" }],
+    });
+    const doc = toOpenApi(
+      parseIR({
+        errors: [],
+        metadata,
+        routes: [route("/a", "Rating"), route("/b", "Suggestion"), route("/c", "Rating")],
+      }),
+    );
+
+    const ids = [
+      doc.paths?.["/a"].get?.operationId,
+      doc.paths?.["/b"].get?.operationId,
+      doc.paths?.["/c"].get?.operationId,
+    ];
+    expect(ids[0]).toBe("Get");
+    expect(new Set(ids).size).toBe(3); // all unique
+    expect(ids).toContain("Suggestion_Get");
+  });
+
   it("emits additionalProperties for a map schema", () => {
     const ir = parseIR({
       errors: [],
