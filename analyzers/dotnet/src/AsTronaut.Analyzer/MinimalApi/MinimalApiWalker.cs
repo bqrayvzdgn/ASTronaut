@@ -292,9 +292,11 @@ public sealed class MinimalApiWalker
             : new List<ResponseInfo>();
         var responses = declaredResponses.Count > 0
             ? declaredResponses
-            // TypedResults (Results<Ok<T>, NotFound>, Ok<T>, ...) expand into one
-            // response per member; otherwise infer from the plain return type.
+            // 1) TypedResults return type (Results<Ok<T>, NotFound>, Ok<T>, ...);
+            // 2) Results.Ok(dto)/TypedResults.* calls in the handler body;
+            // 3) plain return-type inference.
             : TypedResultsReader.TryRead(returnType, typeMapper)
+              ?? MinimalApiResultReader.TryRead(handler, handlerMethod, model, _compilation, typeMapper)
               ?? BuildResponses(returnType, typeMapper, verb);
         route = route with { Responses = responses };
 
@@ -309,7 +311,7 @@ public sealed class MinimalApiWalker
         }
 
         // Apply fluent chain (WithName, WithTags, RequireAuthorization, ...).
-        route = ApplyFluentChain(mapInvocation, model, route);
+        route = ApplyFluentChain(mapInvocation, model, route, typeMapper);
         return route;
     }
 
@@ -555,13 +557,15 @@ public sealed class MinimalApiWalker
     // Walks outer fluent calls chained after the Map* invocation.
     // `mapInv.Parent.Parent` is the outer InvocationExpression (`.WithName(...)`).
     private static RouteInfo ApplyFluentChain(
-        InvocationExpressionSyntax mapInv, SemanticModel model, RouteInfo route)
+        InvocationExpressionSyntax mapInv, SemanticModel model, RouteInfo route, TypeToSchema typeMapper)
     {
         SyntaxNode? current = mapInv;
         var tags = new List<string>(route.Tags ?? new List<string>());
         string? name = route.OperationId;
         var allowAnonymous = false;
         var requiresAuth = false;
+        var producesResponses = new Dictionary<int, Schema?>();
+        BodyInfo? acceptsBody = null;
 
         while (current?.Parent is MemberAccessExpressionSyntax mae
                && mae.Parent is InvocationExpressionSyntax outer)
@@ -594,9 +598,49 @@ public sealed class MinimalApiWalker
                 case "AllowAnonymous":
                     allowAnonymous = true;
                     break;
+                case "Produces":
+                    var pStatus = ReadIntArg(outer, model, 0) ?? 200;
+                    producesResponses[pStatus] = ReadGenericArg(mae, model, typeMapper)
+                                                 ?? ReadTypeofArg(outer, model, typeMapper);
+                    break;
+                case "ProducesProblem":
+                    producesResponses[ReadIntArg(outer, model, 0) ?? 500] = null;
+                    break;
+                case "Accepts":
+                    var accepts = ReadGenericArg(mae, model, typeMapper);
+                    if (accepts is not null)
+                    {
+                        var ct = outer.ArgumentList.Arguments.Count > 0
+                            ? GetStringLiteral(outer.ArgumentList.Arguments[0].Expression)
+                            : null;
+                        acceptsBody = new BodyInfo
+                        {
+                            ContentType = ct ?? "application/json",
+                            Schema = accepts,
+                            Required = true,
+                        };
+                    }
+                    break;
             }
             current = outer;
         }
+
+        if (producesResponses.Count > 0)
+        {
+            var byStatus = (route.Responses ?? new List<ResponseInfo>()).ToDictionary(r => r.Status);
+            foreach (var kv in producesResponses)
+            {
+                var resp = new ResponseInfo
+                {
+                    Status = kv.Key,
+                    Description = ResponseTypeReader.DescribeStatusPublic(kv.Key),
+                };
+                if (kv.Value is not null) resp = resp with { Schema = kv.Value, ContentType = "application/json" };
+                byStatus[kv.Key] = resp;
+            }
+            route = route with { Responses = byStatus.Values.OrderBy(r => r.Status).ToList() };
+        }
+        if (acceptsBody is not null) route = route with { RequestBody = acceptsBody };
 
         if (tags.Count > 0) route = route with { Tags = tags };
         if (!string.IsNullOrEmpty(name)) route = route with { OperationId = name };
@@ -614,6 +658,38 @@ public sealed class MinimalApiWalker
             };
         }
         return route;
+    }
+
+    private static int? ReadIntArg(InvocationExpressionSyntax inv, SemanticModel model, int index)
+    {
+        if (index >= inv.ArgumentList.Arguments.Count) return null;
+        var expr = inv.ArgumentList.Arguments[index].Expression;
+        return model.GetConstantValue(expr) is { HasValue: true, Value: int v } ? v : null;
+    }
+
+    // The <T> of a generic fluent call like .Produces<T>()/.Accepts<T>().
+    private static Schema? ReadGenericArg(MemberAccessExpressionSyntax mae, SemanticModel model, TypeToSchema mapper)
+    {
+        if (mae.Name is GenericNameSyntax { TypeArgumentList.Arguments.Count: >= 1 } gen)
+        {
+            var type = model.GetTypeInfo(gen.TypeArgumentList.Arguments[0]).Type;
+            if (type is not null) return mapper.Map(type);
+        }
+        return null;
+    }
+
+    // A typeof(T) argument, e.g. .Produces(200, typeof(Foo)).
+    private static Schema? ReadTypeofArg(InvocationExpressionSyntax inv, SemanticModel model, TypeToSchema mapper)
+    {
+        foreach (var arg in inv.ArgumentList.Arguments)
+        {
+            if (arg.Expression is TypeOfExpressionSyntax to)
+            {
+                var type = model.GetTypeInfo(to.Type).Type;
+                if (type is not null) return mapper.Map(type);
+            }
+        }
+        return null;
     }
 
     private SourceLocation MakeSourceLocation(InvocationExpressionSyntax inv)
