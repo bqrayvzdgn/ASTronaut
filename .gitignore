@@ -49,3 +49,36 @@ Thumbs.db
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+# Visual Studio / .NET (analyzer)
+.vs/
+*.user
+*.suo
+*.userprefs
+[Tt]est[Rr]esults/
+*.nupkg
+*.snupkg
+project.lock.json
+
+# Go (analyzer, when added)
+*.test
+*.out
+analyzers/go/vendor/
+
+# Build / task caches
+.turbo/
+.cache/
+*.tsbuildinfo
+.eslintcache
+
+# Coverage (extra reporters)
+*.lcov
+.nyc_output/
+
+# Editor / OS (extra)
+*~
+*.bak
+desktop.ini
+
+# Claude Code
+.claude
