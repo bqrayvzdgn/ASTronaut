@@ -36,8 +36,7 @@ const toPascal = (snake: string) => {
   const camel = toCamel(snake);
   return camel.charAt(0).toUpperCase() + camel.slice(1);
 };
-const hasWord = (source: string, word: string) =>
-  new RegExp(`\\b${word}\\b`).test(source);
+const hasWord = (source: string, word: string) => new RegExp(`\\b${word}\\b`).test(source);
 
 describe("IR contract drift", () => {
   const fields = protoFieldNames(proto);
@@ -63,9 +62,7 @@ describe("IR contract drift", () => {
   it("every proto field has a property in IR.cs", () => {
     // C# properties are PascalCase; the one camelCase override in IR.cs is spelled
     // via [JsonPropertyName], so accept either form.
-    const missing = fields.filter(
-      (f) => !hasWord(irCs, toPascal(f)) && !hasWord(irCs, toCamel(f)),
-    );
+    const missing = fields.filter((f) => !hasWord(irCs, toPascal(f)) && !hasWord(irCs, toCamel(f)));
     expect(missing, `Missing from IR.cs: ${missing.join(", ")}`).toEqual([]);
   });
 });

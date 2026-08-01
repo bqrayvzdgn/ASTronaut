@@ -42,11 +42,11 @@ describe("multiple content types", () => {
     const op = doc.paths?.["/items"].post;
     expect(op).toBeDefined();
 
-    expect(Object.keys(op!.requestBody!.content)).toEqual([
+    expect(Object.keys(op?.requestBody?.content ?? {})).toEqual([
       "application/json",
       "application/xml",
     ]);
-    expect(Object.keys(op!.responses["200"].content!)).toEqual([
+    expect(Object.keys(op?.responses?.["200"]?.content ?? {})).toEqual([
       "application/json",
       "application/xml",
     ]);
@@ -66,7 +66,11 @@ describe("multiple content types", () => {
             required: true,
             schema: {
               kind: "OBJECT",
-              additionalProperties: { kind: "PRIMITIVE", primitiveType: "integer", format: "int32" },
+              additionalProperties: {
+                kind: "PRIMITIVE",
+                primitiveType: "integer",
+                format: "int32",
+              },
             },
           },
           responses: [{ status: 200, description: "OK" }],
@@ -142,6 +146,6 @@ describe("multiple content types", () => {
 
     const doc = toOpenApi(ir);
     const op = doc.paths?.["/one"].post;
-    expect(Object.keys(op!.requestBody!.content)).toEqual(["multipart/form-data"]);
+    expect(Object.keys(op?.requestBody?.content ?? {})).toEqual(["multipart/form-data"]);
   });
 });
