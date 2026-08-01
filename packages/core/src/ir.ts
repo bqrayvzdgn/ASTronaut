@@ -68,6 +68,8 @@ export interface BodyInfo {
   contentType: string;
   schema: Schema;
   required: boolean;
+  /** All accepted content types (from [Consumes]); all share `schema`. */
+  contentTypes?: string[];
 }
 
 export interface ResponseInfo {
@@ -76,6 +78,8 @@ export interface ResponseInfo {
   schema?: Schema;
   contentType?: string;
   headers?: Record<string, ParamInfo>;
+  /** All produced content types (from [Produces]); all share `schema`. */
+  contentTypes?: string[];
 }
 
 export interface AuthInfo {

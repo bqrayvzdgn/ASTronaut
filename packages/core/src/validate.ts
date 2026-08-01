@@ -3,7 +3,8 @@
 // instead of producing an invalid OpenAPI spec downstream.
 //
 // The zod schemas mirror ir.ts. If you change ir.ts or parser.proto, change
-// these too — the cross-check is enforced by tests in packages/core/test.
+// these too. Field-presence drift across proto/parser.proto, ir.ts, this file,
+// and IR.cs is guarded by packages/core/test/drift.test.ts.
 
 import { z } from "zod";
 
@@ -89,6 +90,7 @@ export const bodyInfoSchema = z
     contentType: z.string().min(1),
     schema: schemaSchema,
     required: z.boolean(),
+    contentTypes: z.array(z.string().min(1)).optional(),
   })
   .strict();
 
@@ -99,6 +101,7 @@ export const responseInfoSchema = z
     schema: schemaSchema.optional(),
     contentType: z.string().optional(),
     headers: z.record(z.string(), paramInfoSchema).optional(),
+    contentTypes: z.array(z.string().min(1)).optional(),
   })
   .strict();
 

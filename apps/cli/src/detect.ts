@@ -3,25 +3,44 @@ import { join, sep } from "node:path";
 
 export interface DetectedProject {
   framework: "aspnet";
-  csprojPath: string;
+  /** "solution" when the entry point is a .sln/.slnx, else a single project. */
+  kind: "project" | "solution";
+  /** Path to the .csproj or .sln/.slnx that will be handed to the analyzer. */
+  path: string;
 }
 
-// Walks the input directory looking for the first .csproj outside bin/ and obj/.
-// If the input itself is a .csproj, returns it directly. Returns null when the
-// directory exists but contains no .csproj — caller decides how to surface it.
+const SOLUTION_EXTS = [".sln", ".slnx"];
+
+// Resolves the input into the file the analyzer should open. A solution takes
+// precedence over a bare .csproj so multi-project surface is captured. If the
+// input itself is a .csproj/.sln, it's returned directly. Returns null when
+// nothing analyzable is found — caller decides how to surface it.
 export function detectAspnetProject(inputPath: string): DetectedProject | null {
   if (!existsSync(inputPath)) return null;
   const stat = statSync(inputPath);
   if (stat.isFile()) {
-    return inputPath.toLowerCase().endsWith(".csproj")
-      ? { framework: "aspnet", csprojPath: inputPath }
-      : null;
+    if (isSolution(inputPath)) return { framework: "aspnet", kind: "solution", path: inputPath };
+    if (inputPath.toLowerCase().endsWith(".csproj")) {
+      return { framework: "aspnet", kind: "project", path: inputPath };
+    }
+    return null;
   }
-  const found = findCsproj(inputPath);
-  return found ? { framework: "aspnet", csprojPath: found } : null;
+
+  const solution = findFirst(inputPath, (name) => isSolution(name));
+  if (solution) return { framework: "aspnet", kind: "solution", path: solution };
+
+  const csproj = findFirst(inputPath, (name) => name.toLowerCase().endsWith(".csproj"));
+  return csproj ? { framework: "aspnet", kind: "project", path: csproj } : null;
 }
 
-function findCsproj(dir: string): string | null {
+function isSolution(name: string): boolean {
+  const lower = name.toLowerCase();
+  return SOLUTION_EXTS.some((ext) => lower.endsWith(ext));
+}
+
+// Breadth-ish walk returning the first file whose name matches, skipping
+// build-output and dependency directories.
+function findFirst(dir: string, match: (name: string) => boolean): string | null {
   const stack: string[] = [dir];
   while (stack.length > 0) {
     const current = stack.pop();
@@ -45,8 +64,7 @@ function findCsproj(dir: string): string | null {
         stack.push(full);
         continue;
       }
-      if (entry.toLowerCase().endsWith(".csproj")) {
-        // Skip csproj files nested inside bin/ or obj/ at any depth.
+      if (match(entry)) {
         const segments = full.split(sep);
         if (segments.some((p) => p === "bin" || p === "obj")) continue;
         return full;
