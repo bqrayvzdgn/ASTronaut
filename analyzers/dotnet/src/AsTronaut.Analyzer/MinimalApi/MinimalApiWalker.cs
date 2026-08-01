@@ -40,6 +40,10 @@ public sealed class MinimalApiWalker
     private readonly bool _stringEnums;
     private readonly Dictionary<ISymbol, string> _groupPrefixes =
         new(SymbolEqualityComparer.Default);
+    // Groups (by their local-variable symbol) that carry a group-level
+    // `.RequireAuthorization()` — propagated to every endpoint mapped under them.
+    private readonly Dictionary<ISymbol, bool> _groupAuth =
+        new(SymbolEqualityComparer.Default);
 
     public MinimalApiWalker(Compilation compilation, string repoRoot, SchemaContext schemaContext)
     {
@@ -74,19 +78,34 @@ public sealed class MinimalApiWalker
         {
             foreach (var decl in local.Declaration.Variables)
             {
-                if (decl.Initializer?.Value is not InvocationExpressionSyntax inv) continue;
-                var methodName = GetInvokedMethodName(inv);
-                if (methodName != "MapGroup") continue;
+                // The initializer evaluates to the group builder; it may carry a
+                // fluent chain (e.g. `app.MapGroup("/api").RequireAuthorization()`),
+                // so resolve prefix + group-auth off the whole expression.
+                if (decl.Initializer?.Value is not ExpressionSyntax init) continue;
+                if (!ChainContainsMapGroup(init)) continue;
 
-                var prefix = ResolveGroupPrefixFor(inv, model);
+                var (prefix, requiresAuth) = ResolveChainContext(init, model);
                 if (prefix is null) continue;
 
                 if (model.GetDeclaredSymbol(decl) is ILocalSymbol sym)
                 {
                     _groupPrefixes[sym] = prefix;
+                    if (requiresAuth) _groupAuth[sym] = true;
                 }
             }
         }
+    }
+
+    private static bool ChainContainsMapGroup(ExpressionSyntax expr)
+    {
+        var current = expr;
+        while (current is InvocationExpressionSyntax inv)
+        {
+            if (GetInvokedMethodName(inv) == "MapGroup") return true;
+            current = inv.Expression is MemberAccessExpressionSyntax mae ? mae.Expression : null!;
+            if (current is null) break;
+        }
+        return false;
     }
 
     private void CollectMapInvocations(SyntaxNode root, SemanticModel model)
@@ -94,65 +113,221 @@ public sealed class MinimalApiWalker
         foreach (var inv in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
             var methodName = GetInvokedMethodName(inv);
-            if (methodName is null || !MapToVerb.TryGetValue(methodName, out var verb)) continue;
-            if (inv.ArgumentList.Arguments.Count < 2) continue;
+            if (methodName is null) continue;
 
-            if (!IsRoutingExtension(inv, model)) continue;
-
-            var pattern = GetStringLiteral(inv.ArgumentList.Arguments[0].Expression);
-            if (pattern is null)
+            // MapGet/MapPost/MapPut/MapDelete/MapPatch — single verb, handler at [1].
+            if (MapToVerb.TryGetValue(methodName, out var verb))
             {
-                AddDiagnostic(inv, DiagnosticCodes.DynamicRoutePath,
-                    $"{methodName} with a non-literal route path was skipped "
-                    + "(only string-literal paths are supported).");
+                if (inv.ArgumentList.Arguments.Count < 2) continue;
+                if (!IsRoutingExtension(inv, model)) continue;
+                EmitRoutes(inv, model, new[] { verb },
+                    inv.ArgumentList.Arguments[1].Expression, methodName);
                 continue;
             }
 
-            var prefix = ResolveReceiverPrefix(inv, model);
-            var combined = CombinePath(prefix, pattern);
-            var parsed = RouteTemplateParser.Parse(combined);
+            // MapMethods(pattern, new[]{"GET","POST"}, handler) — one route per verb.
+            if (methodName == "MapMethods")
+            {
+                if (inv.ArgumentList.Arguments.Count < 3) continue;
+                if (!IsRoutingExtension(inv, model)) continue;
 
-            var handler = inv.ArgumentList.Arguments[1].Expression;
-            var route = BuildRoute(inv, verb, parsed, handler, model);
+                var verbs = ReadHttpMethods(inv.ArgumentList.Arguments[1].Expression, model);
+                if (verbs is null)
+                {
+                    AddDiagnostic(inv, DiagnosticCodes.DynamicRoutePath,
+                        "MapMethods with a non-literal HTTP-methods collection was skipped "
+                        + "(only inline string-literal method lists are supported).");
+                    continue;
+                }
+                EmitRoutes(inv, model, verbs,
+                    inv.ArgumentList.Arguments[2].Expression, methodName);
+                continue;
+            }
+
+            // Verb-less Map(pattern, handler). Only the endpoint-routing overload
+            // (not the IApplicationBuilder middleware-branching Map) is a route.
+            if (methodName == "Map")
+            {
+                if (inv.ArgumentList.Arguments.Count < 2) continue;
+                if (!IsRoutingExtension(inv, model)) continue;
+                if (!IsEndpointMapInvocation(inv, model)) continue;
+                // No verb is specified for the verb-less Map (it matches all
+                // methods at runtime); GET is emitted as the representative verb.
+                EmitRoutes(inv, model, new[] { "GET" },
+                    inv.ArgumentList.Arguments[1].Expression, methodName);
+                continue;
+            }
+        }
+    }
+
+    // Resolves the route pattern/prefix/group-auth once, then emits one RouteInfo
+    // per verb (MapMethods yields several; the others exactly one).
+    private void EmitRoutes(
+        InvocationExpressionSyntax inv,
+        SemanticModel model,
+        IReadOnlyList<string> verbs,
+        ExpressionSyntax handler,
+        string methodNameForDiag)
+    {
+        var pattern = GetStringLiteral(inv.ArgumentList.Arguments[0].Expression);
+        if (pattern is null)
+        {
+            AddDiagnostic(inv, DiagnosticCodes.DynamicRoutePath,
+                $"{methodNameForDiag} with a non-literal route path was skipped "
+                + "(only string-literal paths are supported).");
+            return;
+        }
+
+        var (prefix, groupRequiresAuth) = ResolveReceiverContext(inv, model);
+        var combined = CombinePath(prefix, pattern);
+        var parsed = RouteTemplateParser.Parse(combined);
+
+        foreach (var verb in verbs)
+        {
+            var route = BuildRoute(inv, verb, parsed, handler, model, groupRequiresAuth);
             if (route is not null) _routes.Add(route);
         }
     }
 
-    private string? ResolveGroupPrefixFor(InvocationExpressionSyntax mapGroupCall, SemanticModel model)
+    // Reads a statically-resolvable collection of HTTP-method literals, e.g.
+    // `new[] { "GET", "POST" }`, `new string[] { ... }`, `new List<string> { ... }`,
+    // or a C# 12 collection expression `["GET", "POST"]`. Verbs are uppercased and
+    // de-duplicated. Returns null when the collection is not statically resolvable.
+    private static IReadOnlyList<string>? ReadHttpMethods(ExpressionSyntax expr, SemanticModel model)
     {
-        if (mapGroupCall.ArgumentList.Arguments.Count == 0) return null;
-        var pattern = GetStringLiteral(mapGroupCall.ArgumentList.Arguments[0].Expression);
-        if (pattern is null) return null;
-        var parentPrefix = ResolveReceiverPrefix(mapGroupCall, model);
-        return CombinePath(parentPrefix, pattern);
+        InitializerExpressionSyntax? initializer = expr switch
+        {
+            ImplicitArrayCreationExpressionSyntax a => a.Initializer,
+            ArrayCreationExpressionSyntax a => a.Initializer,
+            ObjectCreationExpressionSyntax o => o.Initializer,
+            _ => null,
+        };
+
+        var verbs = new List<string>();
+        if (initializer is not null)
+        {
+            foreach (var e in initializer.Expressions)
+            {
+                if (model.GetConstantValue(e) is not { HasValue: true, Value: string s }) return null;
+                AddVerb(verbs, s);
+            }
+            return verbs.Count > 0 ? verbs : null;
+        }
+
+        if (expr is CollectionExpressionSyntax col)
+        {
+            foreach (var element in col.Elements)
+            {
+                if (element is not ExpressionElementSyntax ee) return null;
+                if (model.GetConstantValue(ee.Expression) is not { HasValue: true, Value: string s }) return null;
+                AddVerb(verbs, s);
+            }
+            return verbs.Count > 0 ? verbs : null;
+        }
+
+        return null;
+
+        static void AddVerb(List<string> acc, string raw)
+        {
+            var v = raw.ToUpperInvariant();
+            if (!acc.Contains(v)) acc.Add(v);
+        }
     }
 
-    private string? ResolveReceiverPrefix(InvocationExpressionSyntax inv, SemanticModel model)
+    // Distinguishes the endpoint-routing `Map` (EndpointRouteBuilderExtensions.Map,
+    // returns RouteHandlerBuilder) from the IApplicationBuilder middleware-branching
+    // `Map`. When the symbol can't be resolved, fall back to the shape of the
+    // handler argument: the middleware overload takes an Action<IApplicationBuilder>.
+    private static bool IsEndpointMapInvocation(InvocationExpressionSyntax inv, SemanticModel model)
     {
-        if (inv.Expression is not MemberAccessExpressionSyntax mae) return null;
-
-        // Case A: chained inline — `app.MapGroup("/api").MapGet(...)`.
-        if (mae.Expression is InvocationExpressionSyntax inner)
+        var info = model.GetSymbolInfo(inv);
+        var sym = info.Symbol as IMethodSymbol
+                  ?? info.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
+        if (sym is not null)
         {
-            var innerName = GetInvokedMethodName(inner);
-            if (innerName == "MapGroup")
-            {
-                return ResolveGroupPrefixFor(inner, model);
-            }
-            // Non-group inner call — no contribution to prefix.
-            return null;
+            var containing = sym.ContainingType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            return containing == "global::Microsoft.AspNetCore.Builder.EndpointRouteBuilderExtensions";
         }
 
-        // Case B: receiver is a local variable.
-        if (mae.Expression is IdentifierNameSyntax id)
+        // Unresolved: treat as an endpoint unless the handler is clearly a
+        // middleware branch (a lambda whose parameter is an IApplicationBuilder).
+        var handler = inv.ArgumentList.Arguments[1].Expression;
+        if (handler is SimpleLambdaExpressionSyntax simple
+            && IsApplicationBuilderParam(simple.Parameter, model))
+        {
+            return false;
+        }
+        if (handler is ParenthesizedLambdaExpressionSyntax paren
+            && paren.ParameterList.Parameters.Count == 1
+            && IsApplicationBuilderParam(paren.ParameterList.Parameters[0], model))
+        {
+            return false;
+        }
+        return true;
+    }
+
+    private static bool IsApplicationBuilderParam(ParameterSyntax parameter, SemanticModel model)
+    {
+        if (parameter.Type is null) return false;
+        var type = model.GetTypeInfo(parameter.Type).Type;
+        return type is not null && InheritsOrImplements(type,
+            "global::Microsoft.AspNetCore.Builder.IApplicationBuilder");
+    }
+
+    // Resolves the group prefix and group-level auth contributed by the receiver
+    // chain of a Map* / MapGroup invocation (the value the call is invoked on).
+    private (string? Prefix, bool RequiresAuth) ResolveReceiverContext(
+        InvocationExpressionSyntax inv, SemanticModel model)
+    {
+        if (inv.Expression is not MemberAccessExpressionSyntax mae) return (null, false);
+        return ResolveChainContext(mae.Expression, model);
+    }
+
+    // Resolves (prefix, requiresAuth) for an expression that evaluates to an
+    // IEndpointRouteBuilder. Handles:
+    //   - a local variable referencing a MapGroup(...) result (with inherited auth),
+    //   - inline chains: `app.MapGroup("/a").RequireAuthorization().MapGroup("/b")`,
+    //   - `.AllowAnonymous()` on a group clears the inherited requirement.
+    // Non-group receivers (the root WebApplication/app) resolve to (null, false).
+    private (string? Prefix, bool RequiresAuth) ResolveChainContext(
+        ExpressionSyntax expr, SemanticModel model)
+    {
+        // Local variable — look up what CollectGroupPrefixes recorded.
+        if (expr is IdentifierNameSyntax id)
         {
             var sym = model.GetSymbolInfo(id).Symbol;
-            if (sym is not null && _groupPrefixes.TryGetValue(sym, out var prefix))
+            if (sym is null) return (null, false);
+            _groupPrefixes.TryGetValue(sym, out var p);
+            _groupAuth.TryGetValue(sym, out var a);
+            return (p, a);
+        }
+
+        if (expr is InvocationExpressionSyntax inv)
+        {
+            var name = GetInvokedMethodName(inv);
+            if (name == "MapGroup")
             {
-                return prefix;
+                var pattern = inv.ArgumentList.Arguments.Count > 0
+                    ? GetStringLiteral(inv.ArgumentList.Arguments[0].Expression)
+                    : null;
+                var (parentPrefix, parentAuth) = ResolveReceiverContext(inv, model);
+                var prefix = pattern is null ? parentPrefix : CombinePath(parentPrefix, pattern);
+                return (prefix, parentAuth);
+            }
+
+            // A fluent call wrapping an inner receiver (RequireAuthorization,
+            // AllowAnonymous, WithTags, ...). Recurse into the receiver, then apply
+            // this call's effect on the group-auth flag.
+            if (inv.Expression is MemberAccessExpressionSyntax innerMae)
+            {
+                var (prefix, auth) = ResolveChainContext(innerMae.Expression, model);
+                if (name == "RequireAuthorization") auth = true;
+                else if (name == "AllowAnonymous") auth = false;
+                return (prefix, auth);
             }
         }
-        return null;
+
+        return (null, false);
     }
 
     private static string CombinePath(string? prefix, string pattern)
@@ -214,7 +389,8 @@ public sealed class MinimalApiWalker
         string verb,
         RouteTemplateParser.Result parsed,
         ExpressionSyntax handler,
-        SemanticModel model)
+        SemanticModel model,
+        bool groupRequiresAuth = false)
     {
         var pathParamNames = new HashSet<string>(
             parsed.PathParams.Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
@@ -244,10 +420,17 @@ public sealed class MinimalApiWalker
                     UpsertPathParam(pathParams, paramInfo);
                     break;
                 case Binding.Query:
-                    queryParams.Add(paramInfo);
+                    // A complex [FromQuery] object binds each of its properties as
+                    // its own query parameter — flatten it (mirrors ControllerWalker).
+                    AddQueryParams(queryParams, hp.Type, paramInfo);
                     break;
                 case Binding.Header:
                     headerParams.Add(paramInfo);
+                    break;
+                case Binding.AsParameters:
+                    // [AsParameters] T is not a body: expand T's bindable properties
+                    // into path params (name matches a route token) or query params.
+                    ExpandAsParameters(schema, pathParamNames, pathParams, queryParams);
                     break;
                 case Binding.Body:
                     body = new BodyInfo
@@ -311,11 +494,13 @@ public sealed class MinimalApiWalker
         }
 
         // Apply fluent chain (WithName, WithTags, RequireAuthorization, ...).
-        route = ApplyFluentChain(mapInvocation, model, route, typeMapper);
+        // A group-level RequireAuthorization is folded in as an auth baseline that
+        // a leaf .AllowAnonymous() can still override.
+        route = ApplyFluentChain(mapInvocation, model, route, typeMapper, groupRequiresAuth);
         return route;
     }
 
-    private enum Binding { Path, Query, Header, Body, Service }
+    private enum Binding { Path, Query, Header, Body, Service, AsParameters }
 
     // Binding is `null` when there's no explicit [FromX] attribute — caller resolves
     // the default after also checking whether the name matches a path template token.
@@ -383,6 +568,7 @@ public sealed class MinimalApiWalker
             foreach (var attr in list.Attributes)
             {
                 var name = attr.Name.ToString();
+                if (Matches(name, "AsParameters")) return Binding.AsParameters;
                 if (Matches(name, "FromBody")) return Binding.Body;
                 if (Matches(name, "FromRoute")) return Binding.Path;
                 if (Matches(name, "FromQuery")) return Binding.Query;
@@ -399,6 +585,7 @@ public sealed class MinimalApiWalker
         foreach (var attr in p.GetAttributes())
         {
             var name = attr.AttributeClass?.Name ?? "";
+            if (name is "AsParametersAttribute" or "AsParameters") return Binding.AsParameters;
             if (name is "FromBodyAttribute" or "FromBody") return Binding.Body;
             if (name is "FromRouteAttribute" or "FromRoute") return Binding.Path;
             if (name is "FromQueryAttribute" or "FromQuery") return Binding.Query;
@@ -494,6 +681,77 @@ public sealed class MinimalApiWalker
         pathParams.Add(incoming);
     }
 
+    // A [FromQuery] scalar is a single query parameter; a [FromQuery] complex
+    // object binds each of its public properties as its own query parameter
+    // (ASP.NET model binding), so flatten it. Mirrors ControllerWalker.AddQueryParams.
+    private void AddQueryParams(List<ParamInfo> queryParams, ITypeSymbol type, ParamInfo paramInfo)
+    {
+        if (TypeClassifier.IsSimpleType(type))
+        {
+            queryParams.Add(paramInfo);
+            return;
+        }
+        var obj = ResolveObjectSchema(paramInfo.Schema);
+        if (obj?.Properties is null)
+        {
+            queryParams.Add(paramInfo);
+            return;
+        }
+        var required = obj.RequiredProperties ?? new List<string>();
+        foreach (var kvp in obj.Properties)
+        {
+            queryParams.Add(new ParamInfo
+            {
+                Name = kvp.Key,
+                Schema = kvp.Value,
+                Required = required.Contains(kvp.Key),
+            });
+        }
+    }
+
+    // [AsParameters] T binds each public property individually: properties whose
+    // name matches a route token become path params, the rest become query params.
+    private void ExpandAsParameters(
+        Schema schema,
+        HashSet<string> pathParamNames,
+        List<ParamInfo> pathParams,
+        List<ParamInfo> queryParams)
+    {
+        var obj = ResolveObjectSchema(schema);
+        if (obj?.Properties is null) return;
+        var required = obj.RequiredProperties ?? new List<string>();
+        foreach (var kvp in obj.Properties)
+        {
+            var param = new ParamInfo
+            {
+                Name = kvp.Key,
+                Schema = kvp.Value,
+                Required = required.Contains(kvp.Key),
+            };
+            if (pathParamNames.Contains(kvp.Key))
+            {
+                UpsertPathParam(pathParams, param);
+            }
+            else
+            {
+                queryParams.Add(param);
+            }
+        }
+    }
+
+    // Resolves an object schema to inspect its properties, following a REFERENCE
+    // into the hoisted shared schema when needed.
+    private Schema? ResolveObjectSchema(Schema schema)
+    {
+        if (schema.Kind == "OBJECT") return schema;
+        if (schema.Kind == "REFERENCE" && schema.RefName is not null
+            && _schemaContext.SharedSchemas.TryGetValue(schema.RefName, out var target))
+        {
+            return target;
+        }
+        return null;
+    }
+
     private static List<ResponseInfo> BuildResponses(ITypeSymbol? returnType, TypeToSchema mapper, string verb)
     {
         var unwrapped = returnType is null ? null : UnwrapReturnWrappers(returnType);
@@ -557,7 +815,8 @@ public sealed class MinimalApiWalker
     // Walks outer fluent calls chained after the Map* invocation.
     // `mapInv.Parent.Parent` is the outer InvocationExpression (`.WithName(...)`).
     private static RouteInfo ApplyFluentChain(
-        InvocationExpressionSyntax mapInv, SemanticModel model, RouteInfo route, TypeToSchema typeMapper)
+        InvocationExpressionSyntax mapInv, SemanticModel model, RouteInfo route,
+        TypeToSchema typeMapper, bool groupRequiresAuth = false)
     {
         SyntaxNode? current = mapInv;
         var tags = new List<string>(route.Tags ?? new List<string>());
@@ -644,7 +903,9 @@ public sealed class MinimalApiWalker
 
         if (tags.Count > 0) route = route with { Tags = tags };
         if (!string.IsNullOrEmpty(name)) route = route with { OperationId = name };
-        if (requiresAuth && !allowAnonymous && route.Auth is null)
+        // Group-level RequireAuthorization is a baseline; an explicit leaf
+        // RequireAuthorization also sets it, and a leaf AllowAnonymous wins.
+        if ((requiresAuth || groupRequiresAuth) && !allowAnonymous && route.Auth is null)
         {
             route = route with
             {
