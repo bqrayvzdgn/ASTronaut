@@ -38,7 +38,35 @@ public static class TypeClassifier
 
         if (IsFormFileType(type)) return false;
         if (IsEnumerable(type)) return false;
-        return type.TypeKind == TypeKind.Interface;
+        if (type.TypeKind == TypeKind.Interface) return true;
+
+        // The DI container is not visible to static analysis, so we cannot know
+        // what was registered. Conservative heuristic: a concrete (non-abstract)
+        // class that is not a record and exposes no bindable surface (no public
+        // writable instance property) is an opaque service/marker (AppDbContext,
+        // a hand-written service). A DTO always has at least one settable/init
+        // property or is a positional record, so real bodies are never flipped.
+        if (type is INamedTypeSymbol named2) return HasNoBindableSurface(named2);
+        return false;
+    }
+
+    // True for a concrete, non-record class with no public writable instance
+    // property — i.e. nothing a model binder could populate. Used only as the
+    // last resort in IsServiceType (see the DI-invisibility note there).
+    private static bool HasNoBindableSurface(INamedTypeSymbol type)
+    {
+        if (type.TypeKind != TypeKind.Class) return false;
+        if (type.IsAbstract) return false;
+        if (type.IsRecord) return false;
+        foreach (var member in type.GetMembers())
+        {
+            if (member is IPropertySymbol { IsStatic: false, DeclaredAccessibility: Accessibility.Public } prop
+                && prop.SetMethod is { DeclaredAccessibility: Accessibility.Public })
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     // A scalar that binds from the route/query as a single value.
@@ -51,6 +79,10 @@ public static class TypeClassifier
         {
             type = nt.TypeArguments[0];
         }
+        // Enums bind from route/query as a single value (their underlying scalar
+        // or member name). Checked after the Nullable<T> unwrap so Nullable<MyEnum>
+        // is handled too.
+        if (type.TypeKind == TypeKind.Enum) return true;
         switch (type.SpecialType)
         {
             case SpecialType.System_Boolean:
