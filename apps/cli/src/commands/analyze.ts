@@ -43,8 +43,9 @@ export async function analyzeCommand(rawPath: string, options: AnalyzeOptions): 
   }
 
   reportDiagnostics(result);
-  if (options.strict && result.errors.some((e) => e.severity === "error")) {
-    ui.error(`Strict mode: ${result.errors.length} diagnostic(s) reported.`);
+  const errorCount = result.errors.filter((e) => e.severity === "error").length;
+  if (options.strict && errorCount > 0) {
+    ui.error(`Strict mode: ${errorCount} error(s) reported.`);
     return 1;
   }
   if (result.routes.length === 0) {
@@ -90,6 +91,12 @@ function handleAnalyzerError(err: unknown): void {
     return;
   }
   if (err instanceof AnalyzerOutputError) {
+    ui.error(err.message);
+    return;
+  }
+  // runAnalyzer tags a missing `dotnet` executable with this name so the
+  // friendly message surfaces without the generic "Unexpected error" prefix.
+  if (err instanceof Error && err.name === "DotnetNotFoundError") {
     ui.error(err.message);
     return;
   }

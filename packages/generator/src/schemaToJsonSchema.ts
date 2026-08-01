@@ -26,10 +26,14 @@ function buildJsonSchema(schema: Schema): SchemaObject {
       return buildReference(schema);
     case "ONE_OF":
       return buildOneOf(schema);
-    case "ANY_OF":
-      return { anyOf: (schema.variants ?? []).map(schemaToJsonSchema) };
-    case "ALL_OF":
-      return { allOf: (schema.variants ?? []).map(schemaToJsonSchema) };
+    case "ANY_OF": {
+      const variants = schema.variants ?? [];
+      return variants.length > 0 ? { anyOf: variants.map(schemaToJsonSchema) } : {};
+    }
+    case "ALL_OF": {
+      const variants = schema.variants ?? [];
+      return variants.length > 0 ? { allOf: variants.map(schemaToJsonSchema) } : {};
+    }
   }
 }
 
@@ -73,14 +77,17 @@ function buildArray(schema: Schema): SchemaObject {
 }
 
 function buildReference(schema: Schema): SchemaObject {
-  if (!schema.refName) {
-    throw new Error("REFERENCE schema is missing refName");
-  }
+  // A REFERENCE without a target name can't be resolved. Rather than crashing
+  // the whole document, emit a permissive empty schema (valid OpenAPI 3.1).
+  if (!schema.refName) return {};
   return { $ref: `#/components/schemas/${schema.refName}` };
 }
 
 function buildOneOf(schema: Schema): SchemaObject {
-  const out: SchemaObject = { oneOf: (schema.variants ?? []).map(schemaToJsonSchema) };
+  const variants = schema.variants ?? [];
+  // An empty `oneOf: []` is invalid — fall back to a permissive empty schema.
+  if (variants.length === 0) return {};
+  const out: SchemaObject = { oneOf: variants.map(schemaToJsonSchema) };
   if (schema.discriminator) {
     out.discriminator = { propertyName: schema.discriminator };
     if (schema.discriminatorMapping && Object.keys(schema.discriminatorMapping).length > 0) {
