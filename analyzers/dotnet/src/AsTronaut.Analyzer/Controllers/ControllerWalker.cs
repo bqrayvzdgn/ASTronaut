@@ -179,7 +179,7 @@ public sealed class ControllerWalker
             {
                 Name = p.Name,
                 Schema = schema,
-                Required = !p.IsOptional && !IsNullable(p.Type),
+                Required = !p.IsOptional && !TypeClassifier.IsNullable(p.Type),
             };
             if (docs.Params.TryGetValue(p.Name, out var paramDoc))
             {
@@ -275,15 +275,6 @@ public sealed class ControllerWalker
         pathParams.Add(incoming);
     }
 
-    private static bool IsNullable(ITypeSymbol type)
-    {
-        if (type.NullableAnnotation == NullableAnnotation.Annotated && type.IsReferenceType) return true;
-        if (type is INamedTypeSymbol named
-            && named.IsGenericType
-            && named.ConstructedFrom?.SpecialType == SpecialType.System_Nullable_T) return true;
-        return false;
-    }
-
     private enum Binding { Path, Query, Header, Body, Service }
 
     private static Binding ResolveBinding(IParameterSymbol parameter, HashSet<string> pathParamNames)
@@ -304,38 +295,10 @@ public sealed class ControllerWalker
         // - If the parameter name matches a path token ⇒ path.
         // - Else, if the type is a simple/primitive type ⇒ query.
         // - Else (complex type) ⇒ body.
-        if (IsServiceType(parameter.Type)) return Binding.Service;
+        if (TypeClassifier.IsServiceType(parameter.Type)) return Binding.Service;
         if (pathParamNames.Contains(parameter.Name)) return Binding.Path;
-        if (IsSimpleType(parameter.Type)) return Binding.Query;
+        if (TypeClassifier.IsSimpleType(parameter.Type)) return Binding.Query;
         return Binding.Body;
-    }
-
-    // Framework-injected types that should never appear as path / query / body
-    // parameters. ASP.NET resolves these from DI or the request context.
-    private static bool IsServiceType(ITypeSymbol type)
-    {
-        var full = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        if (full is "global::System.Threading.CancellationToken"
-            or "global::Microsoft.AspNetCore.Http.HttpContext"
-            or "global::Microsoft.AspNetCore.Http.HttpRequest"
-            or "global::Microsoft.AspNetCore.Http.HttpResponse"
-            or "global::System.Security.Claims.ClaimsPrincipal"
-            or "global::Microsoft.Extensions.Logging.ILogger"
-            or "global::Microsoft.AspNetCore.Mvc.ModelBinding.ModelStateDictionary")
-        {
-            return true;
-        }
-        // Generic ILogger<T> — match unconstructed definition.
-        if (type is INamedTypeSymbol named && named.IsGenericType)
-        {
-            var def = named.ConstructedFrom
-                ?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            if (def == "global::Microsoft.Extensions.Logging.ILogger<TCategoryName>")
-            {
-                return true;
-            }
-        }
-        return false;
     }
 
     // A [FromQuery] scalar is a single query parameter; a [FromQuery] complex
@@ -343,7 +306,7 @@ public sealed class ControllerWalker
     // model binding), so flatten it into per-property params.
     private void AddQueryParams(List<ParamInfo> queryParams, IParameterSymbol p, ParamInfo paramInfo)
     {
-        if (IsSimpleType(p.Type))
+        if (TypeClassifier.IsSimpleType(p.Type))
         {
             queryParams.Add(paramInfo);
             return;
@@ -387,61 +350,7 @@ public sealed class ControllerWalker
     }
 
     private static bool IsFormBinding(IParameterSymbol parameter) =>
-        AttributeReader.HasAttribute(parameter, "FromForm") || IsFormFileType(parameter.Type);
-
-    // IFormFile, IFormFileCollection, or a generic collection of IFormFile.
-    private static bool IsFormFileType(ITypeSymbol type)
-    {
-        if (type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-                .StartsWith("global::Microsoft.AspNetCore.Http.IFormFile", StringComparison.Ordinal))
-        {
-            return true;
-        }
-        if (type is INamedTypeSymbol { IsGenericType: true, TypeArguments.Length: 1 } g)
-        {
-            return g.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-                == "global::Microsoft.AspNetCore.Http.IFormFile";
-        }
-        return false;
-    }
-
-    private static bool IsSimpleType(ITypeSymbol type)
-    {
-        // Unwrap Nullable<T>.
-        if (type is INamedTypeSymbol nt
-            && nt.IsGenericType
-            && nt.ConstructedFrom?.SpecialType == SpecialType.System_Nullable_T
-            && nt.TypeArguments.Length == 1)
-        {
-            type = nt.TypeArguments[0];
-        }
-        switch (type.SpecialType)
-        {
-            case SpecialType.System_Boolean:
-            case SpecialType.System_Char:
-            case SpecialType.System_SByte:
-            case SpecialType.System_Byte:
-            case SpecialType.System_Int16:
-            case SpecialType.System_UInt16:
-            case SpecialType.System_Int32:
-            case SpecialType.System_UInt32:
-            case SpecialType.System_Int64:
-            case SpecialType.System_UInt64:
-            case SpecialType.System_Single:
-            case SpecialType.System_Double:
-            case SpecialType.System_Decimal:
-            case SpecialType.System_String:
-                return true;
-        }
-        var full = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        return full is "global::System.Guid"
-            or "global::System.DateTime"
-            or "global::System.DateTimeOffset"
-            or "global::System.DateOnly"
-            or "global::System.TimeOnly"
-            or "global::System.TimeSpan"
-            or "global::System.Uri";
-    }
+        AttributeReader.HasAttribute(parameter, "FromForm") || TypeClassifier.IsFormFileType(parameter.Type);
 
     private static List<ResponseInfo> BuildResponses(IMethodSymbol method, TypeToSchema mapper, string verb)
     {

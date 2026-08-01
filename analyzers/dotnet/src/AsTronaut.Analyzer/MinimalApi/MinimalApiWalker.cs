@@ -252,7 +252,7 @@ public sealed class MinimalApiWalker
                 case Binding.Body:
                     body = new BodyInfo
                     {
-                        ContentType = IsFormFileType(hp.Type) ? "multipart/form-data" : "application/json",
+                        ContentType = TypeClassifier.IsFormFileType(hp.Type) ? "multipart/form-data" : "application/json",
                         Schema = schema,
                         Required = hp.Required,
                     };
@@ -363,14 +363,14 @@ public sealed class MinimalApiWalker
         if (type is null) return null;
 
         var attrBinding = ResolveBindingFromAttributes(syntax.AttributeLists);
-        var required = syntax.Default is null && !IsNullable(type);
+        var required = syntax.Default is null && !TypeClassifier.IsNullable(type);
         return new HandlerParam(syntax.Identifier.ValueText, type, required, attrBinding);
     }
 
     private static HandlerParam MakeHandlerParamFromSymbol(IParameterSymbol p)
     {
         var attrBinding = ResolveBindingFromSymbolAttributes(p);
-        var required = !p.IsOptional && !IsNullable(p.Type);
+        var required = !p.IsOptional && !TypeClassifier.IsNullable(p.Type);
         return new HandlerParam(p.Name, p.Type, required, attrBinding);
     }
 
@@ -409,8 +409,8 @@ public sealed class MinimalApiWalker
 
     private static Binding DefaultBindingForType(ITypeSymbol type)
     {
-        if (IsServiceType(type)) return Binding.Service;
-        if (IsSimpleType(type)) return Binding.Query;
+        if (TypeClassifier.IsServiceType(type)) return Binding.Service;
+        if (TypeClassifier.IsSimpleType(type)) return Binding.Query;
         return Binding.Body;
     }
 
@@ -418,17 +418,6 @@ public sealed class MinimalApiWalker
     {
         if (pathParamNames.Contains(hp.Name)) return Binding.Path;
         return DefaultBindingForType(hp.Type);
-    }
-
-    private static bool IsServiceType(ITypeSymbol type)
-    {
-        var full = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        return full is "global::Microsoft.AspNetCore.Http.HttpContext"
-            or "global::Microsoft.AspNetCore.Http.HttpRequest"
-            or "global::Microsoft.AspNetCore.Http.HttpResponse"
-            or "global::System.Threading.CancellationToken"
-            or "global::Microsoft.Extensions.Logging.ILogger"
-            or "global::System.Security.Claims.ClaimsPrincipal";
     }
 
     private static bool Matches(string syntaxName, string attrName)
@@ -442,68 +431,6 @@ public sealed class MinimalApiWalker
         if (n.EndsWith("Attribute", StringComparison.Ordinal))
             n = n.Substring(0, n.Length - 9);
         return n == attrName;
-    }
-
-    private static bool IsSimpleType(ITypeSymbol type)
-    {
-        if (type is INamedTypeSymbol nt
-            && nt.IsGenericType
-            && nt.ConstructedFrom?.SpecialType == SpecialType.System_Nullable_T
-            && nt.TypeArguments.Length == 1)
-        {
-            type = nt.TypeArguments[0];
-        }
-        switch (type.SpecialType)
-        {
-            case SpecialType.System_Boolean:
-            case SpecialType.System_Char:
-            case SpecialType.System_SByte:
-            case SpecialType.System_Byte:
-            case SpecialType.System_Int16:
-            case SpecialType.System_UInt16:
-            case SpecialType.System_Int32:
-            case SpecialType.System_UInt32:
-            case SpecialType.System_Int64:
-            case SpecialType.System_UInt64:
-            case SpecialType.System_Single:
-            case SpecialType.System_Double:
-            case SpecialType.System_Decimal:
-            case SpecialType.System_String:
-                return true;
-        }
-        var full = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        return full is "global::System.Guid"
-            or "global::System.DateTime"
-            or "global::System.DateTimeOffset"
-            or "global::System.DateOnly"
-            or "global::System.TimeOnly"
-            or "global::System.TimeSpan"
-            or "global::System.Uri";
-    }
-
-    // IFormFile, IFormFileCollection, or a generic collection of IFormFile.
-    private static bool IsFormFileType(ITypeSymbol type)
-    {
-        if (type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-                .StartsWith("global::Microsoft.AspNetCore.Http.IFormFile", StringComparison.Ordinal))
-        {
-            return true;
-        }
-        if (type is INamedTypeSymbol { IsGenericType: true, TypeArguments.Length: 1 } g)
-        {
-            return g.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-                == "global::Microsoft.AspNetCore.Http.IFormFile";
-        }
-        return false;
-    }
-
-    private static bool IsNullable(ITypeSymbol type)
-    {
-        if (type.NullableAnnotation == NullableAnnotation.Annotated && type.IsReferenceType) return true;
-        if (type is INamedTypeSymbol named
-            && named.IsGenericType
-            && named.ConstructedFrom?.SpecialType == SpecialType.System_Nullable_T) return true;
-        return false;
     }
 
     private static ITypeSymbol? ExtractHandlerReturnType(ExpressionSyntax handler, SemanticModel model)
