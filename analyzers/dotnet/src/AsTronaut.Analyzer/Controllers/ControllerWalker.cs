@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using AsTronaut.Analyzer.Ir;
 using AsTronaut.Analyzer.SchemaInference;
 using Microsoft.CodeAnalysis;
@@ -83,6 +84,9 @@ public sealed class ControllerWalker
         var classRoute = ExtractRouteTemplate(type, type.Name);
         var classTag = StripControllerSuffix(type.Name);
         var controllerObsolete = AttributeReader.HasAttribute(type, "Obsolete");
+        // URL-segment API versions declared via [ApiVersion("x")] on the
+        // controller. Used to instantiate a {version:apiVersion} route token.
+        var apiVersions = ExtractApiVersions(type);
 
         foreach (var method in CollectActionMethods(type))
         {
@@ -102,11 +106,18 @@ public sealed class ControllerWalker
                 var methodRouteTemplate = AttributeReader.GetStringArg(http, 0) ?? "";
                 var combined = CombineRoutes(classRoute, methodRouteTemplate);
                 var withPlaceholders = ApplyPlaceholders(combined, type.Name, method.Name);
-                var parsed = RouteTemplateParser.Parse(withPlaceholders);
 
-                var route = BuildRoute(method, verb, parsed, classTag, filePath);
-                if (methodObsolete) route = route with { Deprecated = true };
-                _routes.Add(route);
+                // A {version:apiVersion} token combined with declared
+                // [ApiVersion] values fans one action out into a concrete route
+                // per version; otherwise this yields the single template as-is.
+                foreach (var template in ExpandApiVersions(withPlaceholders, apiVersions))
+                {
+                    var parsed = RouteTemplateParser.Parse(template);
+
+                    var route = BuildRoute(method, verb, parsed, classTag, filePath);
+                    if (methodObsolete) route = route with { Deprecated = true };
+                    _routes.Add(route);
+                }
             }
         }
     }
@@ -189,6 +200,42 @@ public sealed class ControllerWalker
         return template
             .Replace("[controller]", controller, StringComparison.OrdinalIgnoreCase)
             .Replace("[action]", methodName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Matches a route token carrying the `apiVersion` constraint, e.g.
+    // "{version:apiVersion}" inside a segment like "v{version:apiVersion}".
+    private static readonly Regex ApiVersionTokenRegex =
+        new(@"\{[^{}]*:apiVersion[^{}]*\}", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    // Version strings declared by [ApiVersion("x")] attributes on the controller,
+    // in declaration order. Empty when the controller is not versioned.
+    private static List<string> ExtractApiVersions(INamedTypeSymbol type)
+    {
+        var versions = new List<string>();
+        foreach (var attr in AttributeReader.FindAttributes(type, "ApiVersion"))
+        {
+            var version = AttributeReader.GetStringArg(attr, 0);
+            if (!string.IsNullOrEmpty(version)) versions.Add(version!);
+        }
+        return versions;
+    }
+
+    // When the template contains an apiVersion token AND versions are declared,
+    // yields one concrete template per version (token replaced by the literal
+    // version). Otherwise yields the template unchanged — so unversioned
+    // controllers, and versioned templates without the token, are untouched.
+    private static IEnumerable<string> ExpandApiVersions(
+        string template, IReadOnlyList<string> versions)
+    {
+        if (versions.Count == 0 || !ApiVersionTokenRegex.IsMatch(template))
+        {
+            yield return template;
+            yield break;
+        }
+        foreach (var version in versions)
+        {
+            yield return ApiVersionTokenRegex.Replace(template, version);
+        }
     }
 
     private static string StripControllerSuffix(string typeName)

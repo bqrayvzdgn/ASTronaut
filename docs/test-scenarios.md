@@ -84,7 +84,7 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | B11 | `ControllerBase` yerine `Controller` (MVC View) | | API mı sayılır? | ❓ |
 | B12 | Abstract/base controller'dan miras action | base sınıfta `[HttpGet]` | **desteklenmiyor:** sadece `type.GetMembers()`, base action'lar yürünmez | ✗ |
 | B13 | Generic controller | `Ctrl<T>` | davranış? | ✗ |
-| B14 | `[ApiVersion]` / versiyonlu route | Asp.Versioning | desteklenmiyor | ✗ |
+| B14 | `[ApiVersion]` / versiyonlu route | Asp.Versioning | **URL-segment versiyonlama destekli:** `[ApiVersion("1.0")]` + `{version:apiVersion}` token'ı somut path'e açılır (`/api/v1.0/...`); çoklu `[ApiVersion]` → versiyon başına ayrı route. Query/header/media-type versiyonlama, `[ApiVersionNeutral]`, `[MapToApiVersion]` kapsam dışı (sonraki tur). | ✅ |
 | B15 | `[NonAction]` public method | | **BUG:** `[NonAction]` yoksayılıyor; Http attribute'lu ise yine route üretir | ✗ |
 | B16 | Private/protected action | | route üretilmemeli | ❓ |
 | B17 | `[AcceptVerbs]` çoklu verb | | davranış? | ✗ |
