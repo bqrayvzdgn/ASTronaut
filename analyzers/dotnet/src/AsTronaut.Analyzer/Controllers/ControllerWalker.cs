@@ -76,14 +76,22 @@ public sealed class ControllerWalker
 
     private void WalkController(INamedTypeSymbol type, string filePath)
     {
+        // [ApiExplorerSettings(IgnoreApi = true)] on the controller hides all
+        // of its actions from the generated surface.
+        if (IsApiExplorerIgnored(type)) return;
+
         var classRoute = ExtractRouteTemplate(type, type.Name);
         var classTag = StripControllerSuffix(type.Name);
+        var controllerObsolete = AttributeReader.HasAttribute(type, "Obsolete");
 
-        foreach (var method in type.GetMembers().OfType<IMethodSymbol>())
+        foreach (var method in CollectActionMethods(type))
         {
-            if (method.MethodKind != MethodKind.Ordinary) continue;
-            if (method.DeclaredAccessibility != Accessibility.Public) continue;
-            if (method.IsStatic) continue;
+            // [NonAction] and [ApiExplorerSettings(IgnoreApi = true)] opt a
+            // single method out of routing.
+            if (AttributeReader.HasAttribute(method, "NonAction")) continue;
+            if (IsApiExplorerIgnored(method)) continue;
+
+            var methodObsolete = controllerObsolete || AttributeReader.HasAttribute(method, "Obsolete");
 
             foreach (var http in AttributeReader.FindAttributes(method, HttpAttributeNames))
             {
@@ -97,9 +105,58 @@ public sealed class ControllerWalker
                 var parsed = RouteTemplateParser.Parse(withPlaceholders);
 
                 var route = BuildRoute(method, verb, parsed, classTag, filePath);
+                if (methodObsolete) route = route with { Deprecated = true };
                 _routes.Add(route);
             }
         }
+    }
+
+    // Enumerates action methods for the concrete controller, walking up the
+    // inheritance chain so actions declared on a base controller are included.
+    // The walk stops before the framework base types (ControllerBase/Controller)
+    // and System.Object. Members are deduplicated by name+signature so an
+    // overridden or re-declared action is emitted once, with the most-derived
+    // declaration winning.
+    private static IEnumerable<IMethodSymbol> CollectActionMethods(INamedTypeSymbol type)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (var t = type; t is not null; t = t.BaseType)
+        {
+            if (t.SpecialType == SpecialType.System_Object) break;
+            if (t.Name is "ControllerBase" or "Controller") break;
+
+            foreach (var method in t.GetMembers().OfType<IMethodSymbol>())
+            {
+                if (method.MethodKind != MethodKind.Ordinary) continue;
+                if (method.DeclaredAccessibility != Accessibility.Public) continue;
+                if (method.IsStatic) continue;
+
+                // Most-derived declaration was already yielded for this signature.
+                if (!seen.Add(SignatureKey(method))) continue;
+                yield return method;
+            }
+        }
+    }
+
+    private static string SignatureKey(IMethodSymbol method)
+    {
+        var parameters = string.Join(
+            ",",
+            method.Parameters.Select(p =>
+                p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+        return method.Name + "(" + parameters + ")";
+    }
+
+    // True when the symbol carries [ApiExplorerSettings(IgnoreApi = true)].
+    private static bool IsApiExplorerIgnored(ISymbol symbol)
+    {
+        var attr = AttributeReader.FindAttribute(symbol, "ApiExplorerSettings");
+        if (attr is null) return false;
+        foreach (var na in attr.NamedArguments)
+        {
+            if (na.Key == "IgnoreApi" && na.Value.Value is bool b) return b;
+        }
+        return false;
     }
 
     private static string? ResolveVerb(string attrName)
@@ -243,6 +300,17 @@ public sealed class ControllerWalker
             responses = responses
                 .Select(r => r.Schema is not null
                     ? r with { ContentType = produces[0], ContentTypes = produces }
+                    : r)
+                .ToList();
+        }
+
+        // Apply documented <response code="NNN">text</response> descriptions,
+        // overriding the inferred/default description for matching statuses.
+        if (docs.ResponseDescriptions.Count > 0)
+        {
+            responses = responses
+                .Select(r => docs.ResponseDescriptions.TryGetValue(r.Status, out var d)
+                    ? r with { Description = d }
                     : r)
                 .ToList();
         }
