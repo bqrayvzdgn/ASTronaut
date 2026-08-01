@@ -2,9 +2,9 @@ using Microsoft.CodeAnalysis;
 
 namespace AsTronaut.Analyzer.SchemaInference;
 
-// Shared parameter/type classification used by both the controller and minimal
-// API walkers. Previously duplicated in each walker and had silently drifted
-// (minimal API missed ILogger<T> and DI services), so this is the single source.
+// Parameter/type classification used by the controller walker. Kept as a single
+// shared source (rather than inlined) so parameter/DI-service rules — e.g. that
+// ILogger<T> and DI services are not part of the HTTP surface — live in one place.
 public static class TypeClassifier
 {
     private static readonly SymbolDisplayFormat Fq = SymbolDisplayFormat.FullyQualifiedFormat;

@@ -89,27 +89,13 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | B16 | Private/protected action | | route üretilmemeli | ❓ |
 | B17 | `[AcceptVerbs]` çoklu verb | | davranış? | ✗ |
 
-## C. Routing — Minimal API
+## C. Routing — Minimal API  *(kaldırıldı)*
 
-| ID | Senaryo | Örnek | Beklenen | Durum |
-| --- | --- | --- | --- | --- |
-| C1 | `app.MapGet/Post/Put/Delete/Patch` | minimal-api-basic | her biri route | ✅ |
-| C2 | `MapGroup` prefix | `app.MapGroup("/api")` | prefix birleşir | ✅ |
-| C3 | İç içe `MapGroup` | `api.MapGroup("/users")` | prefix'ler zincirlenir | ✅ |
-| C4 | Inline chained MapGroup | `api.MapGroup("/x").MapGet(...)` | çözülür | ✅ |
-| C5 | Inline lambda handler | `() => ...` | çözülür | ✅ |
-| C6 | Method-reference handler | `UserHandlers.Delete` | hedef method okunur | ✅ |
-| C7 | Fluent: `WithName/WithTags/WithSummary/WithDescription` | | metadata'ya map | ✅ |
-| C8 | `WithOpenApi(...)` özelleştirme | operation transform | desteklenmiyor | ✗ |
-| C9 | `MapMethods(["GET","POST"], ...)` | | çoklu verb | ❓ |
-| C10 | `Map(pattern, handler)` (verb'siz) | | davranış? | ❓ |
-| C11 | Değişkene atanmış handler `var h = () => ...` | | çözülür mü | ❓ |
-| C12 | Ayrı sınıftaki static handler grubu | `RouteGroupBuilder` extension | ❓ |
-| C13 | Extension method ile endpoint kayıt | `app.MapUserEndpoints()` | takip edilmez | ✗ |
-| C14 | `builder.Services...` DI zinciri gürültüsü | Program.cs setup | route değil, atlanır | ✅ |
-| C15 | Koşullu map (`if (env) app.MapGet`) | | route çıkarılır mı | ❓ |
-| C16 | Döngü içinde map | `foreach(... app.MapGet)` | statik analiz sınırı | ✗ |
-| C17 | `MapControllers()` + minimal karışık | aynı projede ikisi | ikisi de emit | ❓ |
+> ⛔ **Minimal API desteği kaldırıldı** (`feat/remove-minimal-api`). ASTronaut yalnızca
+> Controller tabanlı ASP.NET Core projelerini analiz eder. Buradaki C1–C17 senaryoları
+> ve minimal'e özgü tüm satırlar (E10–E11, G11–G14/G17, M4–M5/M11) geçersizdir. Bölüm
+> harfi, sonraki bölümlere yapılan atıflar bozulmasın diye korunmuştur. Minimal API
+> ileride genericity yol haritası kapsamında yeniden değerlendirilebilir.
 
 ## D. Route template & constraint'ler
 
@@ -144,8 +130,6 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | E7 | Attribute'suz complex tip → body çıkarımı | `CreateDto dto` | body | ✅ |
 | E8 | Nullable param `string? q` | | required=false | ✅ |
 | E9 | Default değerli param `int size = 20` | | required=false | ✅ |
-| E10 | Minimal API'de path param eşleşmesi | `(long id)` + `{id:long}` | path param | ✅ |
-| E11 | Minimal API DI parametreleri body sayılmamalı | `HttpContext`, `CancellationToken`, `[FromServices]`, `IService` | atlanır (interface'ler) | ✅ |
 | E11b | **Concrete class** service (`AppDbContext`) | ctor DI ama attribute yok | **BUG:** interface değil → service sayılmaz → body'ye bağlanır | ✗ |
 | E12 | `[AsParameters]` struct binding | | her alan ayrı param | ❓ |
 | E13 | `[FromKeyedServices]` | | atlanır (switch'te var) | ✅ |
@@ -183,13 +167,8 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | G8 | `ValueTask<T>` | | unwrap | ❓ |
 | G9 | `Ok(obj)` / `NotFound()` gövde çıkarımı | ControllerResultReader | status+şema çıkarımı | ✅ |
 | G10 | `CreatedAtAction` / `BadRequest(x)` | | 201/400 + şema | ⚠️ |
-| G11 | Minimal `Results.Ok(x)` / `Results.NotFound()` | MinimalApiResultReader | status çıkarımı | ✅ |
-| G12 | `TypedResults.Ok<T>` | | 200 + T | ✅ |
-| G13 | `Results<Ok<T>, NotFound>` union | | üye başına response | ✅ |
-| G14 | `.Produces<T>(200)` / `.Produces(404)` fluent | | response ekle | ✅ |
 | G15 | `.ProducesProblem(400)` / `ProblemDetails` | | 400 + ProblemDetails şema | ❓ |
 | G16 | `void` / `Task` dönüş | | 200/204 boş | ❓ |
-| G17 | `IResult` (tipsiz minimal) | | default 200 | ⚠️ |
 | G18 | `File(...)` / `PhysicalFile` | | binary/stream response | ❓ |
 | G19 | `Redirect` / 3xx | | davranış? | ❓ |
 | G20 | Birden çok return path farklı tip | `if...return A else return B` | oneOf? ilk mi? | ❓ |
@@ -292,14 +271,11 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | M1 | Controller `[Authorize]` | bearer JWT securityScheme | ✅ |
 | M2 | `[AllowAnonymous]` override | auth yok (öncelikli) | ✅ |
 | M3 | Method `[Authorize]` | endpoint güvenliği | ✅ |
-| M4 | Minimal `.RequireAuthorization()` | bearer | ✅ |
-| M5 | Minimal `.AllowAnonymous()` | auth yok | ✅ |
 | M6 | Method-ref handler'da `[Authorize]` | method'tan okunur | ✅ |
 | M7 | `[Authorize(Roles=...)]` / policy | scopes/roller? şema? | ❓ |
 | M8 | `[Authorize(AuthenticationSchemes=...)]` | scheme adı | ❓ |
 | M9 | API key auth (custom header) | apiKey scheme | ✗ |
 | M10 | OAuth2 / OpenIdConnect | ilgili scheme | ✗ |
-| M11 | Grup düzeyi `.RequireAuthorization()` (MapGroup) | tüm alt endpoint'ler | ❓ |
 | M12 | Birden çok auth şeması aynı specte | dedup by id | ❓ |
 | M13 | Auth şema id dedup (aynı bearer paylaşımı) | tek scheme | ✅ |
 
@@ -326,7 +302,7 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | O2 | `--strict` + error severity | exit 1 | ✅ |
 | O3 | `--strict` yokken error | çıktı yine üretilir | ✅ |
 | O4 | 0 route bulundu | "0 routes", exit 1 | ✅ |
-| O5 | Diagnostic kodları — sadece **W001/W002/W003** var, **E0xx yok** | W001=literal olmayan route path, W002=çözülemeyen handler, W003=workspace/solution yükleme | ⚠️ |
+| O5 | Diagnostic kodları — emisyonda **W003/W007** + **E001** var (W004/W005 tanımlı, henüz emit edilmiyor) | W003=workspace/solution yükleme, W007=dizinde çoklu proje, E001=proje/derleme yüklenemedi | ⚠️ |
 | O5b | MVC tarafı sessiz atlama | abstract controller, çözülemeyen action body | **hiç diagnostic yok** (sessiz) | ✗ |
 | O6 | Kısmen parse edilebilen proje | parse edilenler + uyarılar | ❓ |
 | O7 | Derlenmeyen C# (syntax hatası) | graceful, diagnostic | ❓ |
@@ -428,7 +404,7 @@ test edilmeli.
 | --- | --- | --- |
 | U10 | Auth **yalnızca** `http/bearer/JWT` | ✅ WS6/#11 (apiKey/oauth2/openIdConnect eşlemesi; flows/scope ertelendi) |
 | U11 | Base/abstract controller miras action'ları yürünmez | ✅ WS2/#16 (inheritance zinciri + dedup) |
-| U12 | Minimal API: `MapMethods`/`Map`/`[AsParameters]`/complex-`[FromQuery]`/group-auth | ✅ WS3/#17 (⚠️ `WithOpenApi`/endpoint filter hâlâ ertelendi) |
+| U12 | Minimal API: `MapMethods`/`Map`/`[AsParameters]`/complex-`[FromQuery]`/group-auth | ⛔ geçersiz — Minimal API kaldırıldı (`feat/remove-minimal-api`) |
 | U13 | `object`/`JsonElement`/interface/struct → boş `{}` | — tasarım gereği serbest-form (değişmedi) |
 | U14 | `[Range]` exclusive bound & .NET 8 attribute'ları | ✅ WS4/#13 (exclusive range, `[Length]`, DataType tablosu; `[AllowedValues]` ertelendi) |
 | U15 | Return unwrap 4 seviye, sınırlı awaitable | ⚠️ WS7/#14 (çok daha fazla result tipi eklendi; unwrap derinliği ertelendi) |
@@ -445,20 +421,22 @@ test edilmeli.
 | U21 | Aynı path+method iki route → sessiz overwrite | ✅ WS9/#10 (ilkini koru + uyarı) |
 | U22 | Aynı simple-name farklı namespace DTO adı sıraya bağlı | ⚠️ WS10/#15 (namespace-türevli kararlı ad; hangi tipin bare ad aldığı hâlâ sıraya bağlı — not) |
 | U23 | `--strict` mesajı toplam diagnostic basıyor | ✅ WS9/#10 (error sayısı) |
-| U24 | Controller + Minimal aynı route → dedup yok | ✅ WS10/#15 (`(method,path)` dedup + W006) |
+| U24 | Controller + Minimal aynı route → dedup yok | ⛔ geçersiz — Minimal API kaldırıldı; controller-minimal dedup (W006) ve `MergeRoutes` söküldü |
 
 ### U.4 — Diagnostic envanteri (Round 1 sonrası)
 
 | Kod | Anlamı | Tetikleyici |
 | --- | --- | --- |
-| **W001** `DynamicRoutePath` | route path literal değil | `MapX(nonLiteral, ...)` → route atlanır |
-| **W002** `UnresolvedHandler` | method-ref handler çözülemedi | route emit edilir, param/response eksik olabilir |
 | **W003** `WorkspaceLoad` | workspace/solution yükleme sorunu | `.sln`/`.slnx` açılamadı → csproj taramasına düşüş |
 | **W004** `SkippedController` | atlanan MVC controller | *tanımlı* (emisyon sonraki turda) |
 | **W005** `UnresolvedResult` | çözülemeyen MVC result body | *tanımlı* (emisyon sonraki turda) |
-| **W006** `DuplicateRoute` | controller+minimal aynı route | dedup edilen route (U24) |
 | **W007** `MultipleProjects` | dizinde birden çok proje | deterministik seçilen + atlananlar (U17) |
 | **E001** `ProjectLoadFailed` | proje/derleme yüklenemedi | `--strict` ile yakalanabilir hata (WS10/#15) |
+
+> **Not:** W001 (`DynamicRoutePath`), W002 (`UnresolvedHandler`) ve W006 (`DuplicateRoute`)
+> yalnızca Minimal API / controller-minimal birleştirme yolundan çıkıyordu; Minimal API
+> kaldırıldığında emekliye ayrıldı. Kodlar tarihsel loglar belirsizleşmesin diye yeniden
+> kullanılmıyor.
 
 ---
 
@@ -467,10 +445,8 @@ test edilmeli.
 Kapsamı gerçekçi zorlamak için farklı stiller:
 
 1. **Küçük Controllers** — klasik `[ApiController]` CRUD (ör. eShopOnWeb tarzı).
-2. **Küçük Minimal API** — `MapGroup` + `TypedResults` yoğun.
-3. **Karışık** — aynı projede Controllers + Minimal API.
-4. **Büyük gerçek dünya** — çok projeli `.sln`, generic'ler, polymorphism, auth.
-5. **Zorlayıcı/uç** — R/S bölümündeki desteklenmeyen yapıları içeren, "çökmemeli" testi için.
+2. **Büyük gerçek dünya** — çok projeli `.sln`, generic'ler, polymorphism, auth.
+3. **Zorlayıcı/uç** — R/S bölümündeki desteklenmeyen yapıları içeren, "çökmemeli" testi için.
 
 ## Öncelik sırası (canlı testte ilk bakılacaklar)
 
@@ -479,7 +455,7 @@ Kapsamı gerçekçi zorlamak için farklı stiller:
 
 1. **Round-1 fix doğrulaması (U1–U24 ✅ satırları)** — düzeltmeler gerçek projelerde
    beklendiği gibi mi çalışıyor; regresyon testi henüz **yok**, bu yüzden canlı en kritik güvence.
-2. **⚠️ kısmi kalanlar** (U12 `WithOpenApi`, U15 unwrap derinliği, U16 DTO property doc,
+2. **⚠️ kısmi kalanlar** (U15 unwrap derinliği, U16 DTO property doc,
    U22 bare-ad sırası) — sınırların gerçekten graceful olduğunu doğrula.
 3. **❓ dönüş tipi çıkarımı** (G7–G20) — gerçek kod tabanlarında en çeşitli alan.
 4. **❓ şema/tip kapsama** (I13–I19, J4–J7, K5–K7) — primitive/format doğruluğu.
@@ -490,5 +466,4 @@ Kapsamı gerçekçi zorlamak için farklı stiller:
 - **Regresyon test turu:** her ✅ fix için `TestCompilation.Walk` tabanlı xUnit +
   gerekli e2e fixture (senaryo katalogundaki ✗→✅ geçişini kilitler).
 - **Kalan özellikler:** OAuth2 flows/OpenIdConnect URL, `[Authorize]` roles/policy→scope,
-  minimal `WithOpenApi`/endpoint filter, return unwrap derinliği, DTO property XML doc'ları,
-  MVC-tarafı W004/W005 emisyonu.
+  return unwrap derinliği, DTO property XML doc'ları, MVC-tarafı W004/W005 emisyonu.

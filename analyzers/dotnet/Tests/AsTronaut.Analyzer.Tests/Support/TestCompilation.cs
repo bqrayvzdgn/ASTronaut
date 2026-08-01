@@ -1,7 +1,6 @@
 using System.Collections.Immutable;
 using AsTronaut.Analyzer.Controllers;
 using AsTronaut.Analyzer.Ir;
-using AsTronaut.Analyzer.MinimalApi;
 using AsTronaut.Analyzer.SchemaInference;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -37,8 +36,8 @@ public static class TestCompilation
                 nullableContextOptions: NullableContextOptions.Enable));
     }
 
-    // Convenience: run both walkers over the source with a shared SchemaContext
-    // (mirrors Program.AnalyzeAsync) and return the assembled result.
+    // Convenience: run the controller walker over the source with a shared
+    // SchemaContext (mirrors Program.AnalyzeAsync) and return the assembled result.
     public static WalkResult Walk(string source, string repoRoot = "")
     {
         var compilation = Create(source);
@@ -47,11 +46,8 @@ public static class TestCompilation
         var controllers = new ControllerWalker(compilation, repoRoot, schemaContext);
         controllers.Walk();
 
-        var minimal = new MinimalApiWalker(compilation, repoRoot, schemaContext);
-        minimal.Walk();
-
-        var routes = controllers.Routes.Concat(minimal.Routes).ToList();
-        var errors = controllers.Errors.Concat(minimal.Errors).ToList();
+        var routes = controllers.Routes.ToList();
+        var errors = controllers.Errors.ToList();
         return new WalkResult(routes, errors, schemaContext.SharedSchemas);
     }
 
