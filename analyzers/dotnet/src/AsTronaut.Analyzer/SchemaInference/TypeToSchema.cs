@@ -102,6 +102,15 @@ public sealed class TypeToSchema
                     Kind = "ARRAY",
                     Items = new Schema { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "binary" },
                 };
+            // Free-form JSON containers → an unconstrained object rather than a
+            // walk of their internal members (RootElement, etc.).
+            case "global::System.Text.Json.JsonDocument":
+            case "global::System.Text.Json.JsonElement":
+            case "global::System.Text.Json.Nodes.JsonNode":
+            case "global::System.Text.Json.Nodes.JsonObject":
+            case "global::Newtonsoft.Json.Linq.JObject":
+            case "global::Newtonsoft.Json.Linq.JToken":
+                return new Schema { Kind = "OBJECT" };
         }
 
         // Enums → integer (System.Text.Json default) with numeric enum values,
@@ -151,6 +160,9 @@ public sealed class TypeToSchema
         // marked [JsonPolymorphic] hoists as a discriminated ONE_OF instead.
         if (type is INamedTypeSymbol named && named.TypeKind == TypeKind.Class)
         {
+            // Anonymous types (e.g. return Ok(new { count })) have no useful name
+            // to hoist under → emit inline.
+            if (named.IsAnonymousType) return BuildClassSchema(named);
             return HasPolymorphism(named)
                 ? _ctx.GetOrCreateReference(named, () => BuildPolymorphicSchema(named))
                 : _ctx.GetOrCreateReference(named, () => BuildClassSchema(named));

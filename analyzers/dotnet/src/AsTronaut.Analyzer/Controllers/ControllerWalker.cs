@@ -192,7 +192,7 @@ public sealed class ControllerWalker
                     UpsertPathParam(pathParams, paramInfo);
                     break;
                 case Binding.Query:
-                    queryParams.Add(paramInfo);
+                    AddQueryParams(queryParams, p, paramInfo);
                     break;
                 case Binding.Header:
                     headerParams.Add(paramInfo);
@@ -230,7 +230,10 @@ public sealed class ControllerWalker
         var declaredResponses = ResponseTypeReader.Read(method, typeMapper);
         var responses = declaredResponses.Count > 0
             ? declaredResponses
-            : BuildResponses(method, typeMapper, verb);
+            // For IActionResult/ActionResult actions, recover responses from the
+            // body's return statements before falling back to the return type.
+            : ControllerResultReader.TryRead(method, _compilation, typeMapper)
+              ?? BuildResponses(method, typeMapper, verb);
 
         // [Produces(...)] declares the produced content type(s) for responses
         // that carry a body schema.
@@ -333,6 +336,45 @@ public sealed class ControllerWalker
             }
         }
         return false;
+    }
+
+    // A [FromQuery] scalar is a single query parameter; a [FromQuery] complex
+    // object binds each of its properties as its own query parameter (ASP.NET
+    // model binding), so flatten it into per-property params.
+    private void AddQueryParams(List<ParamInfo> queryParams, IParameterSymbol p, ParamInfo paramInfo)
+    {
+        if (IsSimpleType(p.Type))
+        {
+            queryParams.Add(paramInfo);
+            return;
+        }
+        var obj = ResolveObjectSchema(paramInfo.Schema);
+        if (obj?.Properties is null)
+        {
+            queryParams.Add(paramInfo);
+            return;
+        }
+        var required = obj.RequiredProperties ?? new List<string>();
+        foreach (var kvp in obj.Properties)
+        {
+            queryParams.Add(new ParamInfo
+            {
+                Name = kvp.Key,
+                Schema = kvp.Value,
+                Required = required.Contains(kvp.Key),
+            });
+        }
+    }
+
+    private Schema? ResolveObjectSchema(Schema schema)
+    {
+        if (schema.Kind == "OBJECT") return schema;
+        if (schema.Kind == "REFERENCE" && schema.RefName is not null
+            && _schemaContext.SharedSchemas.TryGetValue(schema.RefName, out var target))
+        {
+            return target;
+        }
+        return null;
     }
 
     // Content types from [Consumes]/[Produces] on the method, falling back to
