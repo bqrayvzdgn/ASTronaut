@@ -131,6 +131,14 @@ public sealed class TypeToSchema
             return new Schema { Kind = "ARRAY", Items = Map(arr.ElementType) };
         }
 
+        // Tuples: (int Count, string Name) / ValueTuple<...> → object whose
+        // properties are the tuple elements. Checked before generic collections
+        // because ValueTuple is itself a generic named type.
+        if (type is INamedTypeSymbol tuple && tuple.IsTupleType)
+        {
+            return BuildTupleSchema(tuple);
+        }
+
         // Generic collections: IEnumerable<T>, List<T>, ICollection<T>, IReadOnlyList<T>, ...
         if (type is INamedTypeSymbol generic && generic.IsGenericType)
         {
@@ -142,7 +150,9 @@ public sealed class TypeToSchema
             if (IsDictionaryLike(def) && generic.TypeArguments.Length == 2)
             {
                 // Dictionary<TKey, TValue> → object with additionalProperties (the
-                // value schema). OpenAPI object keys are always strings.
+                // value schema). OpenAPI object keys are always strings, so a
+                // non-string TKey (int, enum, Guid, …) is fine here — the key type
+                // is not inspected and only the value schema is emitted.
                 return new Schema
                 {
                     Kind = "OBJECT",
@@ -178,7 +188,7 @@ public sealed class TypeToSchema
 
         if (asString)
         {
-            var names = members.Select(f => $"\"{f.Name}\"").ToList();
+            var names = members.Select(f => $"\"{ResolveEnumMemberName(f)}\"").ToList();
             return new Schema
             {
                 Kind = "PRIMITIVE",
@@ -202,6 +212,28 @@ public sealed class TypeToSchema
             Format = format,
             Constraints = values.Count > 0 ? new Constraints { EnumValues = values } : null,
         };
+    }
+
+    // The serialized string for an enum member, honoring an explicit override via
+    // [JsonPropertyName("...")] (System.Text.Json) or
+    // [EnumMember(Value = "...")] (System.Runtime.Serialization / Newtonsoft).
+    private static string ResolveEnumMemberName(IFieldSymbol member)
+    {
+        var jpn = AttributeReader.FindAttribute(member, "JsonPropertyName");
+        if (jpn is not null
+            && AttributeReader.GetStringArg(jpn, 0) is { Length: > 0 } explicitName)
+        {
+            return explicitName;
+        }
+
+        var em = AttributeReader.FindAttribute(member, "EnumMember");
+        if (em is not null
+            && AttributeReader.GetNamedStringArg(em, "Value") is { Length: > 0 } emValue)
+        {
+            return emValue;
+        }
+
+        return member.Name;
     }
 
     // A [JsonConverter(typeof(JsonStringEnumConverter))] (System.Text.Json) or
@@ -286,9 +318,33 @@ public sealed class TypeToSchema
                 propSchema = DataAnnotationReader.Apply(propSchema, member);
                 properties[propName] = propSchema;
 
-                if (IsRequired(member))
+                // Required when the NRT/value-type rules say so OR an explicit
+                // [Required] annotation is present (which overrides nullability).
+                if (IsRequired(member) || DataAnnotationReader.HasRequired(member))
                 {
                     required.Add(propName);
+                }
+            }
+
+            // System.Text.Json ignores fields by default, so only fields that are
+            // explicitly opted in via [JsonInclude] participate in serialization.
+            foreach (var field in t.GetMembers().OfType<IFieldSymbol>())
+            {
+                if (field.DeclaredAccessibility != Accessibility.Public) continue;
+                if (field.IsStatic || field.IsConst) continue;
+                if (!AttributeReader.HasAttribute(field, "JsonInclude")) continue;
+
+                var fieldName = ResolvePropertyName(field);
+                if (properties.ContainsKey(fieldName)) continue;
+
+                var fieldSchema = Map(field.Type);
+                fieldSchema = DataAnnotationReader.Apply(fieldSchema, field);
+                properties[fieldName] = fieldSchema;
+
+                if (IsRequiredMember(field.Type, field.IsRequired)
+                    || DataAnnotationReader.HasRequired(field))
+                {
+                    required.Add(fieldName);
                 }
             }
         }
@@ -301,18 +357,54 @@ public sealed class TypeToSchema
         };
     }
 
-    private static bool IsRequired(IPropertySymbol property)
+    // Tuple → object with one property per element. Element names are used when
+    // declared ((int Count, string Name)); otherwise the positional Item1,
+    // Item2, … names are emitted.
+    private Schema BuildTupleSchema(INamedTypeSymbol tuple)
     {
-        if (property.IsRequired) return true;
+        var properties = new Dictionary<string, Schema>();
+        var required = new List<string>();
+
+        var index = 0;
+        foreach (var element in tuple.TupleElements)
+        {
+            index++;
+            var name = string.IsNullOrEmpty(element.Name) ? $"Item{index}" : element.Name;
+            if (properties.ContainsKey(name)) continue;
+
+            properties[name] = Map(element.Type);
+            if (IsRequiredMember(element.Type, requiredKeyword: false))
+            {
+                required.Add(name);
+            }
+        }
+
+        return new Schema
+        {
+            Kind = "OBJECT",
+            Properties = properties.Count > 0 ? properties : null,
+            RequiredProperties = required.Count > 0 ? required : null,
+        };
+    }
+
+    private static bool IsRequired(IPropertySymbol property) =>
+        IsRequiredMember(property.Type, property.IsRequired);
+
+    // Shared required-ness rule for properties, fields, and tuple elements:
+    // the `required` keyword, a non-nullable reference type, or a non-Nullable<T>
+    // value type all imply the member must be present.
+    private static bool IsRequiredMember(ITypeSymbol type, bool requiredKeyword)
+    {
+        if (requiredKeyword) return true;
         // NRT: non-nullable reference type ⇒ required.
-        if (property.Type.IsReferenceType
-            && property.Type.NullableAnnotation == NullableAnnotation.NotAnnotated)
+        if (type.IsReferenceType
+            && type.NullableAnnotation == NullableAnnotation.NotAnnotated)
         {
             return true;
         }
         // Value type that is NOT Nullable<T> ⇒ required.
-        if (property.Type.IsValueType
-            && !(property.Type is INamedTypeSymbol nt
+        if (type.IsValueType
+            && !(type is INamedTypeSymbol nt
                  && nt.ConstructedFrom?.SpecialType == SpecialType.System_Nullable_T))
         {
             return true;
@@ -332,7 +424,9 @@ public sealed class TypeToSchema
             or "global::System.Collections.Generic.List<T>"
             or "global::System.Collections.Generic.HashSet<T>"
             or "global::System.Collections.Generic.ISet<T>"
-            or "global::System.Collections.Generic.IReadOnlySet<T>";
+            or "global::System.Collections.Generic.IReadOnlySet<T>"
+            // Async streams serialize as JSON arrays of the element type.
+            or "global::System.Collections.Generic.IAsyncEnumerable<T>";
     }
 
     private static bool IsDictionaryLike(INamedTypeSymbol? def)
@@ -356,7 +450,7 @@ public sealed class TypeToSchema
     // Resolves the serialized property name, honoring explicit serialization
     // attributes so the emitted schema matches the real wire format. Falls back
     // to ASP.NET Core's System.Text.Json default camelCase policy.
-    private static string ResolvePropertyName(IPropertySymbol member)
+    private static string ResolvePropertyName(ISymbol member)
     {
         // System.Text.Json: [JsonPropertyName("...")].
         var jpn = AttributeReader.FindAttribute(member, "JsonPropertyName");
