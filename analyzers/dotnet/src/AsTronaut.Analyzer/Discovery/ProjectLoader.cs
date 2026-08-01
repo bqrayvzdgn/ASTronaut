@@ -26,8 +26,19 @@ public static class ProjectLoader
     {
         var diagnostics = new List<ParseError>();
 
-        var resolved = ResolveInput(inputPath);
-        if (resolved is null) return new ProjectLoadResult(Array.Empty<Compilation>(), diagnostics);
+        var resolved = ResolveInput(inputPath, diagnostics, repoRoot);
+        if (resolved is null)
+        {
+            diagnostics.Add(new ParseError
+            {
+                File = NormalizePath(inputPath, repoRoot),
+                Line = 0,
+                Message = $"Could not resolve a project or solution to analyze from input: {inputPath}",
+                Severity = "error",
+                Code = DiagnosticCodes.ProjectLoadFailed,
+            });
+            return new ProjectLoadResult(Array.Empty<Compilation>(), diagnostics);
+        }
 
         var (kind, path) = resolved.Value;
         StderrLog.Info($"Loading {(kind == InputKind.Solution ? "solution" : "project")}: {path}");
@@ -60,6 +71,18 @@ public static class ProjectLoader
             if (project.Language != LanguageNames.CSharp) continue;
             var compilation = await project.GetCompilationAsync();
             if (compilation is not null) compilations.Add(compilation);
+        }
+
+        if (compilations.Count == 0)
+        {
+            diagnostics.Add(new ParseError
+            {
+                File = displayPath,
+                Line = 0,
+                Message = $"No C# compilation could be produced from: {displayPath}",
+                Severity = "error",
+                Code = DiagnosticCodes.ProjectLoadFailed,
+            });
         }
         return new ProjectLoadResult(compilations, diagnostics);
     }
@@ -99,7 +122,9 @@ public static class ProjectLoader
             Severity = "warning",
             Code = DiagnosticCodes.WorkspaceLoad,
         });
-        return await OpenProjectsAsync(workspace, EnumerateSource(dir, "*.csproj").ToList());
+        var fallbackCsprojs = EnumerateSource(dir, "*.csproj").ToList();
+        fallbackCsprojs.Sort(StringComparer.Ordinal);
+        return await OpenProjectsAsync(workspace, fallbackCsprojs);
     }
 
     private static List<string> ParseSlnxProjectPaths(string slnxPath)
@@ -163,7 +188,8 @@ public static class ProjectLoader
         p.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)
         || p.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase);
 
-    private static (InputKind Kind, string Path)? ResolveInput(string inputPath)
+    private static (InputKind Kind, string Path)? ResolveInput(
+        string inputPath, List<ParseError> diagnostics, string repoRoot)
     {
         if (File.Exists(inputPath))
         {
@@ -181,26 +207,46 @@ public static class ProjectLoader
         }
 
         // A solution takes precedence: it captures multi-project surface that a
-        // single .csproj would miss.
+        // single .csproj would miss. Candidates are sorted Ordinal so the choice
+        // is deterministic regardless of filesystem enumeration order.
         var solutions = EnumerateSource(inputPath, "*.sln")
             .Concat(EnumerateSource(inputPath, "*.slnx"))
             .ToList();
+        solutions.Sort(StringComparer.Ordinal);
         if (solutions.Count > 0)
         {
             if (solutions.Count > 1)
-                StderrLog.Warn($"Multiple solution files found; using the first: {solutions[0]}");
+                WarnMultiple(diagnostics, repoRoot, "solution", solutions);
             return (InputKind.Solution, Path.GetFullPath(solutions[0]));
         }
 
         var projects = EnumerateSource(inputPath, "*.csproj").ToList();
+        projects.Sort(StringComparer.Ordinal);
         if (projects.Count == 0)
         {
             StderrLog.Error($"No .csproj or .sln files found under: {inputPath}");
             return null;
         }
         if (projects.Count > 1)
-            StderrLog.Warn($"Multiple .csproj files found (and no solution); using the first: {projects[0]}");
+            WarnMultiple(diagnostics, repoRoot, "project (.csproj)", projects);
         return (InputKind.Project, Path.GetFullPath(projects[0]));
+    }
+
+    // Emits both a stderr note and a structured W007 diagnostic recording that
+    // several candidates were found and which one was chosen deterministically.
+    private static void WarnMultiple(
+        List<ParseError> diagnostics, string repoRoot, string kind, IReadOnlyList<string> sorted)
+    {
+        var chosen = NormalizePath(sorted[0], repoRoot);
+        StderrLog.Warn($"Multiple {kind} files found ({sorted.Count}); selected deterministically: {sorted[0]}");
+        diagnostics.Add(new ParseError
+        {
+            File = chosen,
+            Line = 0,
+            Message = $"Multiple {kind} files found ({sorted.Count}); selected deterministically (Ordinal-first): {chosen}",
+            Severity = "warning",
+            Code = DiagnosticCodes.MultipleProjects,
+        });
     }
 
     private static IEnumerable<string> EnumerateSource(string dir, string pattern) =>
