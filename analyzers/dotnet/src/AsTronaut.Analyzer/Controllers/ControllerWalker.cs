@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using AsTronaut.Analyzer.Diagnostics;
 using AsTronaut.Analyzer.Ir;
 using AsTronaut.Analyzer.SchemaInference;
 using Microsoft.CodeAnalysis;
@@ -57,6 +58,19 @@ public sealed class ControllerWalker
             {
                 if (model.GetDeclaredSymbol(cls) is not INamedTypeSymbol type) continue;
                 if (!IsController(type)) continue;
+
+                // A non-abstract OPEN generic controller (`Ctrl<T> : ControllerBase`)
+                // has unbound type parameters: any route emitted for it would bind
+                // the unresolved T. Skip it and surface the skip as a W004 warning
+                // instead of dropping it silently. (A concrete controller over a
+                // closed generic base — `Orders : Base<Order>` — is not generic here
+                // and is unaffected.)
+                if (IsOpenGeneric(type))
+                {
+                    _errors.Add(MakeSkippedControllerError(type, tree.FilePath));
+                    continue;
+                }
+
                 WalkController(type, tree.FilePath);
             }
         }
@@ -73,6 +87,26 @@ public sealed class ControllerWalker
             if (name is "ControllerBase" or "Controller") return true;
         }
         return false;
+    }
+
+    // True for an unbound generic definition such as `class Ctrl<T>` whose type
+    // parameters are still open (not constructed to concrete arguments).
+    private static bool IsOpenGeneric(INamedTypeSymbol type) =>
+        type.IsGenericType
+        && type.TypeArguments.Any(a => a.TypeKind == TypeKind.TypeParameter);
+
+    private ParseError MakeSkippedControllerError(INamedTypeSymbol type, string filePath)
+    {
+        var source = MakeSourceLocation(type, filePath);
+        return new ParseError
+        {
+            File = source.File,
+            Line = source.Line,
+            Message = $"Open generic controller '{type.Name}' was skipped; "
+                + "route binding requires a concrete type argument.",
+            Severity = "warning",
+            Code = DiagnosticCodes.SkippedController,
+        };
     }
 
     private void WalkController(INamedTypeSymbol type, string filePath)
@@ -97,13 +131,8 @@ public sealed class ControllerWalker
 
             var methodObsolete = controllerObsolete || AttributeReader.HasAttribute(method, "Obsolete");
 
-            foreach (var http in AttributeReader.FindAttributes(method, HttpAttributeNames))
+            foreach (var (verb, methodRouteTemplate) in CollectVerbRoutes(method))
             {
-                var attrName = http.AttributeClass?.Name ?? "";
-                var verb = ResolveVerb(attrName);
-                if (verb is null) continue;
-
-                var methodRouteTemplate = AttributeReader.GetStringArg(http, 0) ?? "";
                 var combined = CombineRoutes(classRoute, methodRouteTemplate);
                 var withPlaceholders = ApplyPlaceholders(combined, type.Name, method.Name);
 
@@ -168,6 +197,31 @@ public sealed class ControllerWalker
             if (na.Key == "IgnoreApi" && na.Value.Value is bool b) return b;
         }
         return false;
+    }
+
+    // Yields (HTTP verb, method route template) pairs for an action, drawn from
+    // both the per-verb [HttpGet]/[HttpPost]/… attributes and [AcceptVerbs("GET",
+    // "POST")], which lists its verbs as constructor arguments and carries an
+    // optional named `Route` template.
+    private static IEnumerable<(string Verb, string Template)> CollectVerbRoutes(IMethodSymbol method)
+    {
+        foreach (var http in AttributeReader.FindAttributes(method, HttpAttributeNames))
+        {
+            var verb = ResolveVerb(http.AttributeClass?.Name ?? "");
+            if (verb is null) continue;
+            yield return (verb, AttributeReader.GetStringArg(http, 0) ?? "");
+        }
+
+        foreach (var accept in AttributeReader.FindAttributes(method, "AcceptVerbs"))
+        {
+            var template = AttributeReader.GetNamedStringArg(accept, "Route") ?? "";
+            foreach (var raw in AttributeReader.GetStringArgs(accept))
+            {
+                var verb = raw.Trim().ToUpperInvariant();
+                if (verb.Length == 0) continue;
+                yield return (verb, template);
+            }
+        }
     }
 
     private static string? ResolveVerb(string attrName)
@@ -535,9 +589,9 @@ public sealed class ControllerWalker
             or "global::Microsoft.AspNetCore.Mvc.ActionResult";
     }
 
-    private SourceLocation MakeSourceLocation(IMethodSymbol method, string filePath)
+    private SourceLocation MakeSourceLocation(ISymbol symbol, string filePath)
     {
-        var loc = method.Locations.FirstOrDefault(l => l.IsInSource);
+        var loc = symbol.Locations.FirstOrDefault(l => l.IsInSource);
         if (loc is null)
         {
             return new SourceLocation { File = NormalizePath(filePath) };
