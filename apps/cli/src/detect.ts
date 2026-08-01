@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
+import { ui } from "./ui.js";
 
 export interface DetectedProject {
   framework: "aspnet";
@@ -26,10 +27,20 @@ export function detectAspnetProject(inputPath: string): DetectedProject | null {
     return null;
   }
 
-  const solution = findFirst(inputPath, (name) => isSolution(name));
-  if (solution) return { framework: "aspnet", kind: "solution", path: solution };
+  const solutions = findMatches(inputPath, (name) => isSolution(name));
+  const solution = solutions[0];
+  if (solution) {
+    if (solutions.length > 1) {
+      ui.warn(`Multiple solution files found; using ${solution}`);
+    }
+    return { framework: "aspnet", kind: "solution", path: solution };
+  }
 
-  const csproj = findFirst(inputPath, (name) => name.toLowerCase().endsWith(".csproj"));
+  const csprojs = findMatches(inputPath, (name) => name.toLowerCase().endsWith(".csproj"));
+  const csproj = csprojs[0];
+  if (csproj && csprojs.length > 1) {
+    ui.warn(`Multiple .csproj files found; using ${csproj}`);
+  }
   return csproj ? { framework: "aspnet", kind: "project", path: csproj } : null;
 }
 
@@ -38,9 +49,11 @@ function isSolution(name: string): boolean {
   return SOLUTION_EXTS.some((ext) => lower.endsWith(ext));
 }
 
-// Breadth-ish walk returning the first file whose name matches, skipping
-// build-output and dependency directories.
-function findFirst(dir: string, match: (name: string) => boolean): string | null {
+// Walks the tree collecting every file whose name matches, skipping
+// build-output and dependency directories. Results are sorted by path so the
+// caller's pick is deterministic regardless of filesystem traversal order.
+function findMatches(dir: string, match: (name: string) => boolean): string[] {
+  const found: string[] = [];
   const stack: string[] = [dir];
   while (stack.length > 0) {
     const current = stack.pop();
@@ -67,9 +80,9 @@ function findFirst(dir: string, match: (name: string) => boolean): string | null
       if (match(entry)) {
         const segments = full.split(sep);
         if (segments.some((p) => p === "bin" || p === "obj")) continue;
-        return full;
+        found.push(full);
       }
     }
   }
-  return null;
+  return found.sort((a, b) => a.localeCompare(b));
 }

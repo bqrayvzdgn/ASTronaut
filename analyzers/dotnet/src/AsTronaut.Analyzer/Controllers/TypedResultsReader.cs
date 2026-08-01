@@ -50,6 +50,15 @@ public static class TypedResultsReader
             Status = status.Value,
             Description = ResponseTypeReader.DescribeStatusPublic(status.Value),
         };
+
+        // File results carry a binary payload rather than a JSON body.
+        if (IsFileResult(n.Name))
+        {
+            return response with { Schema = BinarySchema(), ContentType = "application/octet-stream" };
+        }
+
+        // Generic results (Ok<T>, JsonHttpResult<T>, CreatedAtRoute<T>, ...) expose
+        // the response body as their first type argument.
         if (n.IsGenericType && n.TypeArguments.Length >= 1)
         {
             response = response with
@@ -66,7 +75,7 @@ public static class TypedResultsReader
         "Ok" => 200,
         "Created" or "CreatedAtRoute" => 201,
         "Accepted" or "AcceptedAtRoute" => 202,
-        "NoContent" => 204,
+        "NoContent" or "EmptyHttpResult" => 204,
         "BadRequest" or "ValidationProblem" => 400,
         "UnauthorizedHttpResult" => 401,
         "ForbidHttpResult" => 403,
@@ -74,8 +83,25 @@ public static class TypedResultsReader
         "Conflict" => 409,
         "UnprocessableEntity" => 422,
         "ProblemHttpResult" => 500,
+        // JsonHttpResult<T> carries a JSON body (via its generic argument);
+        // ContentHttpResult writes text but exposes no typed body.
+        "JsonHttpResult" or "ContentHttpResult" => 200,
+        // File downloads → 200 with a binary body (handled in MapOne).
+        "FileContentHttpResult" or "FileStreamHttpResult" or "PhysicalFileHttpResult" => 200,
+        "RedirectHttpResult" => 302,
+        "ChallengeHttpResult" => 401,
+        // Auth sign-in/out results carry no body.
+        "SignInHttpResult" => 200,
+        "SignOutHttpResult" => 204,
         _ => null,
     };
+
+    private static bool IsFileResult(string typeName) => typeName is
+        "FileContentHttpResult" or "FileStreamHttpResult" or "PhysicalFileHttpResult";
+
+    // A binary payload schema, matching how IFormFile bodies are represented.
+    private static Schema BinarySchema() =>
+        new() { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "binary" };
 
     // Collapse duplicate status codes (e.g. two 200s), preferring an entry that
     // carries a body schema.
