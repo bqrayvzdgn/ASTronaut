@@ -62,6 +62,31 @@ public static class AttributeReader
         return null;
     }
 
+    // All string constructor arguments in order, flattening params-array args
+    // (e.g. [Consumes("a", "b")] or [Produces("a", "b")]). Non-string args
+    // (a leading typeof(T)) are skipped.
+    public static List<string> GetStringArgs(AttributeData attribute)
+    {
+        var result = new List<string>();
+        foreach (var arg in attribute.ConstructorArguments)
+        {
+            // Check Kind before touching Value: accessing .Value on an array
+            // TypedConstant throws.
+            if (arg.Kind == TypedConstantKind.Array)
+            {
+                foreach (var el in arg.Values)
+                {
+                    if (el.Value is string es) result.Add(es);
+                }
+            }
+            else if (arg.Value is string s)
+            {
+                result.Add(s);
+            }
+        }
+        return result;
+    }
+
     private static bool Matches(INamedTypeSymbol? cls, string name)
     {
         if (cls is null) return false;

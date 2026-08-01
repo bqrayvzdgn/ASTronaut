@@ -198,7 +198,7 @@ public sealed class ControllerWalker
                 case Binding.Body:
                     body = new BodyInfo
                     {
-                        ContentType = "application/json",
+                        ContentType = IsFormBinding(p) ? "multipart/form-data" : "application/json",
                         Schema = schema,
                         Required = paramInfo.Required,
                     };
@@ -212,7 +212,16 @@ public sealed class ControllerWalker
         if (pathParams.Count > 0) routeInfo = routeInfo with { PathParams = pathParams };
         if (queryParams.Count > 0) routeInfo = routeInfo with { QueryParams = queryParams };
         if (headerParams.Count > 0) routeInfo = routeInfo with { HeaderParams = headerParams };
-        if (body is not null) routeInfo = routeInfo with { RequestBody = body };
+        if (body is not null)
+        {
+            // [Consumes(...)] overrides the inferred request content type(s).
+            var consumes = ReadContentTypes(method, "Consumes");
+            if (consumes.Count > 0)
+            {
+                body = body with { ContentType = consumes[0], ContentTypes = consumes };
+            }
+            routeInfo = routeInfo with { RequestBody = body };
+        }
 
         // Prefer [ProducesResponseType] declarations when present; otherwise
         // fall back to inferring response(s) from the return type and verb.
@@ -220,6 +229,18 @@ public sealed class ControllerWalker
         var responses = declaredResponses.Count > 0
             ? declaredResponses
             : BuildResponses(method, typeMapper, verb);
+
+        // [Produces(...)] declares the produced content type(s) for responses
+        // that carry a body schema.
+        var produces = ReadContentTypes(method, "Produces");
+        if (produces.Count > 0)
+        {
+            responses = responses
+                .Select(r => r.Schema is not null
+                    ? r with { ContentType = produces[0], ContentTypes = produces }
+                    : r)
+                .ToList();
+        }
         routeInfo = routeInfo with { Responses = responses };
 
         var auth = AuthReader.Resolve(method, method.ContainingType);
@@ -308,6 +329,34 @@ public sealed class ControllerWalker
             {
                 return true;
             }
+        }
+        return false;
+    }
+
+    // Content types from [Consumes]/[Produces] on the method, falling back to
+    // the controller. Empty when neither is present.
+    private static List<string> ReadContentTypes(IMethodSymbol method, string attrName)
+    {
+        var attr = AttributeReader.FindAttribute(method, attrName)
+                   ?? AttributeReader.FindAttribute(method.ContainingType, attrName);
+        return attr is null ? new List<string>() : AttributeReader.GetStringArgs(attr);
+    }
+
+    private static bool IsFormBinding(IParameterSymbol parameter) =>
+        AttributeReader.HasAttribute(parameter, "FromForm") || IsFormFileType(parameter.Type);
+
+    // IFormFile, IFormFileCollection, or a generic collection of IFormFile.
+    private static bool IsFormFileType(ITypeSymbol type)
+    {
+        if (type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                .StartsWith("global::Microsoft.AspNetCore.Http.IFormFile", StringComparison.Ordinal))
+        {
+            return true;
+        }
+        if (type is INamedTypeSymbol { IsGenericType: true, TypeArguments.Length: 1 } g)
+        {
+            return g.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                == "global::Microsoft.AspNetCore.Http.IFormFile";
         }
         return false;
     }

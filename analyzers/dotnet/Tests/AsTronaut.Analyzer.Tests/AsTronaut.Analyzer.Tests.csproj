@@ -9,6 +9,13 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
 
+  <!-- Pulls the ASP.NET Core reference assemblies into the test host so
+       TestCompilation can hand Roslyn a reference set that resolves
+       [ApiController], MapGet, HttpContext, etc. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />

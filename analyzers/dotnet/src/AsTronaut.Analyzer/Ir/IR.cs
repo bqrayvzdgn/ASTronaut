@@ -54,6 +54,8 @@ public sealed record BodyInfo
     public string ContentType { get; init; } = "application/json";
     public Schema Schema { get; init; } = new();
     public bool Required { get; init; }
+    // All accepted content types (from [Consumes]); all share Schema.
+    public List<string>? ContentTypes { get; init; }
 }
 
 public sealed record ResponseInfo
@@ -63,6 +65,8 @@ public sealed record ResponseInfo
     public Schema? Schema { get; init; }
     public string? ContentType { get; init; }
     public Dictionary<string, ParamInfo>? Headers { get; init; }
+    // All produced content types (from [Produces]); all share Schema.
+    public List<string>? ContentTypes { get; init; }
 }
 
 public sealed record Schema

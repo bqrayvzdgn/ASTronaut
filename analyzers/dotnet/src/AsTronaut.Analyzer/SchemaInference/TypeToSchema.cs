@@ -1,3 +1,4 @@
+using AsTronaut.Analyzer.Controllers;
 using AsTronaut.Analyzer.Ir;
 using Microsoft.CodeAnalysis;
 
@@ -91,6 +92,14 @@ public sealed class TypeToSchema
                 return new Schema { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "time" };
             case "global::System.Uri":
                 return new Schema { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "uri" };
+            case "global::Microsoft.AspNetCore.Http.IFormFile":
+                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "binary" };
+            case "global::Microsoft.AspNetCore.Http.IFormFileCollection":
+                return new Schema
+                {
+                    Kind = "ARRAY",
+                    Items = new Schema { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "binary" },
+                };
         }
 
         // Enums → string with enumValues (names).
@@ -158,8 +167,9 @@ public sealed class TypeToSchema
             if (member.DeclaredAccessibility != Accessibility.Public) continue;
             if (member.IsStatic || member.IsIndexer) continue;
             if (member.GetMethod is null) continue;
+            if (IsJsonIgnored(member)) continue;
 
-            var propName = ToCamelCase(member.Name);
+            var propName = ResolvePropertyName(member);
             var propSchema = Map(member.Type);
             propSchema = DataAnnotationReader.Apply(propSchema, member);
             properties[propName] = propSchema;
@@ -228,6 +238,50 @@ public sealed class TypeToSchema
         return name is "global::System.Threading.Tasks.Task<TResult>"
             or "global::System.Threading.Tasks.ValueTask<TResult>"
             or "global::Microsoft.AspNetCore.Mvc.ActionResult<TValue>";
+    }
+
+    // Resolves the serialized property name, honoring explicit serialization
+    // attributes so the emitted schema matches the real wire format. Falls back
+    // to ASP.NET Core's System.Text.Json default camelCase policy.
+    private static string ResolvePropertyName(IPropertySymbol member)
+    {
+        // System.Text.Json: [JsonPropertyName("...")].
+        var jpn = AttributeReader.FindAttribute(member, "JsonPropertyName");
+        if (jpn is not null
+            && AttributeReader.GetStringArg(jpn, 0) is { Length: > 0 } explicitName)
+        {
+            return explicitName;
+        }
+
+        // Newtonsoft.Json: [JsonProperty("...")] or [JsonProperty(PropertyName = "...")].
+        var jp = AttributeReader.FindAttribute(member, "JsonProperty");
+        if (jp is not null)
+        {
+            var np = AttributeReader.GetStringArg(jp, 0)
+                     ?? AttributeReader.GetNamedStringArg(jp, "PropertyName");
+            if (!string.IsNullOrEmpty(np)) return np!;
+        }
+
+        return ToCamelCase(member.Name);
+    }
+
+    // True when the property is dropped from serialization entirely. Only an
+    // unconditional [JsonIgnore] (Condition=Always, the default) is dropped;
+    // conditional forms (WhenWritingNull/WhenWritingDefault) still serialize
+    // the property, so those remain in the schema.
+    private static bool IsJsonIgnored(IPropertySymbol member)
+    {
+        var attr = AttributeReader.FindAttribute(member, "JsonIgnore");
+        if (attr is null) return false;
+        foreach (var na in attr.NamedArguments)
+        {
+            if (na.Key == "Condition")
+            {
+                // JsonIgnoreCondition: Never=0, Always=1, WhenWritingDefault=2, WhenWritingNull=3.
+                return na.Value.Value is int c && c == 1;
+            }
+        }
+        return true; // No Condition ⇒ Always (Newtonsoft, or STJ default).
     }
 
     private static string ToCamelCase(string name)
