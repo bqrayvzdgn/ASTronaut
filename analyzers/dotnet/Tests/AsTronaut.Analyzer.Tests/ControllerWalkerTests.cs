@@ -100,4 +100,92 @@ public class ControllerWalkerTests
         var result = TestCompilation.Walk(UsersController);
         Assert.Empty(result.Errors);
     }
+
+    // B17 — [AcceptVerbs("GET","POST")] must emit one route per listed verb.
+    private const string AcceptVerbsController = """
+        using Microsoft.AspNetCore.Mvc;
+
+        namespace Demo;
+
+        [ApiController]
+        [Route("api/ping")]
+        public class PingController : ControllerBase
+        {
+            [AcceptVerbs("GET", "POST")]
+            public IActionResult Ping() => Ok();
+
+            [AcceptVerbs("Put")]
+            public IActionResult Replace() => Ok();
+        }
+        """;
+
+    [Fact]
+    public void AcceptVerbs_EmitsRoutePerVerb()
+    {
+        var result = TestCompilation.Walk(AcceptVerbsController);
+
+        Assert.Contains(result.Routes, r => r.Method == "GET" && r.Path == "/api/ping");
+        Assert.Contains(result.Routes, r => r.Method == "POST" && r.Path == "/api/ping");
+        // Single-string form, case-insensitive normalization to POST-style verbs.
+        Assert.Contains(result.Routes, r => r.Method == "PUT" && r.Path == "/api/ping");
+        Assert.Equal(3, result.Routes.Count);
+    }
+
+    // B13 — a non-abstract open generic controller (unbound type parameter) must
+    // be skipped instead of emitting routes with an unresolved T body.
+    private const string OpenGenericController = """
+        using Microsoft.AspNetCore.Mvc;
+
+        namespace Demo;
+
+        [ApiController]
+        [Route("api/[controller]")]
+        public class RepoController<T> : ControllerBase
+        {
+            [HttpPost]
+            public IActionResult Create([FromBody] T item) => Ok();
+        }
+        """;
+
+    [Fact]
+    public void OpenGenericController_IsSkipped_WithW004()
+    {
+        var result = TestCompilation.Walk(OpenGenericController);
+
+        Assert.Empty(result.Routes);
+        var w004 = Assert.Single(result.Errors);
+        Assert.Equal("W004", w004.Code);
+        Assert.Equal("warning", w004.Severity);
+    }
+
+    // B13 — a concrete controller deriving from a closed generic base is not an
+    // open generic and must still emit its routes with no W004.
+    private const string ClosedGenericBaseController = """
+        using Microsoft.AspNetCore.Mvc;
+
+        namespace Demo;
+
+        public abstract class BaseController<T> : ControllerBase
+        {
+        }
+
+        [ApiController]
+        [Route("api/orders")]
+        public class OrdersController : BaseController<Order>
+        {
+            [HttpGet]
+            public IActionResult List() => Ok();
+        }
+
+        public sealed class Order { public int Id { get; set; } }
+        """;
+
+    [Fact]
+    public void ConcreteControllerOverClosedGenericBase_EmitsRoutes_NoW004()
+    {
+        var result = TestCompilation.Walk(ClosedGenericBaseController);
+
+        Assert.Contains(result.Routes, r => r.Method == "GET" && r.Path == "/api/orders");
+        Assert.DoesNotContain(result.Errors, e => e.Code == "W004");
+    }
 }
