@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using AsTronaut.Analyzer.Diagnostics;
 using AsTronaut.Analyzer.Ir;
 using AsTronaut.Analyzer.Logging;
@@ -49,8 +50,8 @@ public static class ProjectLoader
             }
         };
 
-        var projects = kind == InputKind.Solution
-            ? (await workspace.OpenSolutionAsync(path)).Projects
+        IReadOnlyList<Project> projects = kind == InputKind.Solution
+            ? await OpenSolutionProjectsAsync(workspace, path, diagnostics, repoRoot)
             : new[] { await workspace.OpenProjectAsync(path) };
 
         var compilations = new List<Compilation>();
@@ -61,6 +62,87 @@ public static class ProjectLoader
             if (compilation is not null) compilations.Add(compilation);
         }
         return new ProjectLoadResult(compilations, diagnostics);
+    }
+
+    // Resolves the C# projects of a solution. `.slnx` (the XML solution format)
+    // is parsed directly because not every bundled MSBuild can open it; classic
+    // `.sln` goes through the workspace. Either way, if the solution can't be
+    // resolved we fall back to opening every `.csproj` under its directory so a
+    // solution is never a hard failure.
+    private static async Task<IReadOnlyList<Project>> OpenSolutionProjectsAsync(
+        MSBuildWorkspace workspace, string path, List<ParseError> diagnostics, string repoRoot)
+    {
+        if (path.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))
+        {
+            var refs = ParseSlnxProjectPaths(path);
+            if (refs.Count > 0) return await OpenProjectsAsync(workspace, refs);
+        }
+        else
+        {
+            try
+            {
+                var solution = await workspace.OpenSolutionAsync(path);
+                return solution.Projects.ToList();
+            }
+            catch (Exception ex)
+            {
+                StderrLog.Warn($"solution parse failed ({ex.GetType().Name}); scanning for .csproj instead");
+            }
+        }
+
+        var dir = Path.GetDirectoryName(path) ?? ".";
+        diagnostics.Add(new ParseError
+        {
+            File = NormalizePath(path, repoRoot),
+            Line = 0,
+            Message = "Solution file could not be opened directly; analyzed the .csproj files found under its directory instead.",
+            Severity = "warning",
+            Code = DiagnosticCodes.WorkspaceLoad,
+        });
+        return await OpenProjectsAsync(workspace, EnumerateSource(dir, "*.csproj").ToList());
+    }
+
+    private static List<string> ParseSlnxProjectPaths(string slnxPath)
+    {
+        var result = new List<string>();
+        try
+        {
+            var doc = XDocument.Load(slnxPath);
+            var dir = Path.GetDirectoryName(slnxPath) ?? ".";
+            foreach (var proj in doc.Descendants("Project"))
+            {
+                var rel = proj.Attribute("Path")?.Value;
+                if (string.IsNullOrEmpty(rel)) continue;
+                var full = Path.GetFullPath(Path.Combine(dir, rel.Replace('\\', Path.DirectorySeparatorChar)));
+                if (File.Exists(full) && full.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+                {
+                    result.Add(full);
+                }
+            }
+        }
+        catch
+        {
+            // Malformed .slnx → caller falls back to directory scan.
+        }
+        return result;
+    }
+
+    private static async Task<IReadOnlyList<Project>> OpenProjectsAsync(
+        MSBuildWorkspace workspace, IReadOnlyList<string> csprojPaths)
+    {
+        var projects = new List<Project>();
+        foreach (var csproj in csprojPaths)
+        {
+            try
+            {
+                projects.Add(await workspace.OpenProjectAsync(csproj));
+            }
+            catch (Exception ex)
+            {
+                StderrLog.Warn($"skip {csproj}: {ex.Message.Split('\n')[0]}");
+            }
+        }
+        return projects;
     }
 
     private static string NormalizePath(string path, string repoRoot)
