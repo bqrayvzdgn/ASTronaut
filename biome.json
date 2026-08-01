@@ -13,7 +13,8 @@
       "**/generated/**",
       "**/*.pb.go",
       "**/*.pb.cs",
-      "fixtures/**"
+      "fixtures/**",
+      "dev-standarts/**"
     ]
   },
   "formatter": {
