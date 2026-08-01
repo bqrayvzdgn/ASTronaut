@@ -52,6 +52,75 @@ describe("multiple content types", () => {
     ]);
   });
 
+  it("emits additionalProperties for a map schema", () => {
+    const ir = parseIR({
+      errors: [],
+      metadata,
+      routes: [
+        {
+          method: "POST",
+          path: "/bag",
+          source: { file: "a.cs", line: 1, column: 1 },
+          requestBody: {
+            contentType: "application/json",
+            required: true,
+            schema: {
+              kind: "OBJECT",
+              additionalProperties: { kind: "PRIMITIVE", primitiveType: "integer", format: "int32" },
+            },
+          },
+          responses: [{ status: 200, description: "OK" }],
+        },
+      ],
+    });
+
+    const doc = toOpenApi(ir);
+    const body = doc.paths?.["/bag"].post?.requestBody?.content["application/json"].schema;
+    expect(body?.type).toBe("object");
+    expect(body?.additionalProperties).toEqual({ type: "integer", format: "int32" });
+  });
+
+  it("emits a discriminator with $ref mapping for a ONE_OF schema", () => {
+    const doc = toOpenApi(
+      parseIR({
+        errors: [],
+        metadata,
+        routes: [
+          {
+            method: "GET",
+            path: "/a",
+            source: { file: "a.cs", line: 1, column: 1 },
+            responses: [
+              {
+                status: 200,
+                description: "OK",
+                schema: {
+                  kind: "ONE_OF",
+                  variants: [
+                    { kind: "REFERENCE", refName: "Dog" },
+                    { kind: "REFERENCE", refName: "Cat" },
+                  ],
+                  discriminator: "kind",
+                  discriminatorMapping: { dog: "Dog", cat: "Cat" },
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const schema = doc.paths?.["/a"].get?.responses["200"].content?.["application/json"].schema;
+    expect(schema?.oneOf).toHaveLength(2);
+    expect(schema?.discriminator).toEqual({
+      propertyName: "kind",
+      mapping: {
+        dog: "#/components/schemas/Dog",
+        cat: "#/components/schemas/Cat",
+      },
+    });
+  });
+
   it("falls back to the single contentType when contentTypes is absent", () => {
     const ir = parseIR({
       errors: [],

@@ -93,6 +93,13 @@ public sealed record Schema
     public string? Description { get; init; }
     public string? DefaultValue { get; init; }
     public string? Example { get; init; }
+
+    // For OBJECT maps: schema of the value type → OpenAPI additionalProperties.
+    public Schema? AdditionalProperties { get; init; }
+
+    // For polymorphic ONE_OF: discriminator property name and value→refName map.
+    public string? Discriminator { get; init; }
+    public Dictionary<string, string>? DiscriminatorMapping { get; init; }
 }
 
 public sealed record Constraints

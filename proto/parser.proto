@@ -133,6 +133,15 @@ message Schema {
   string description = 11;
   optional string default_value = 12;   // JSON-serialized literal
   optional string example = 13;         // JSON-serialized literal
+
+  // For OBJECT maps/dictionaries: schema of the value type. Generator emits it
+  // as OpenAPI `additionalProperties`. When absent on an OBJECT, no constraint.
+  optional Schema additional_properties = 14;
+
+  // For polymorphic ONE_OF: discriminator property name (e.g. "$type") and the
+  // mapping from discriminator value → ref_name of the variant schema.
+  optional string discriminator = 15;
+  map<string, string> discriminator_mapping = 16;
 }
 
 message Constraints {

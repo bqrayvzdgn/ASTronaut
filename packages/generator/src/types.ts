@@ -92,6 +92,8 @@ export interface SchemaObject {
   oneOf?: SchemaObject[];
   anyOf?: SchemaObject[];
   allOf?: SchemaObject[];
+  additionalProperties?: SchemaObject | boolean;
+  discriminator?: DiscriminatorObject;
   enum?: unknown[];
   minimum?: number;
   maximum?: number;
@@ -109,6 +111,11 @@ export interface SchemaObject {
 }
 
 export type SchemaType = "string" | "number" | "integer" | "boolean" | "array" | "object" | "null";
+
+export interface DiscriminatorObject {
+  propertyName: string;
+  mapping?: Record<string, string>;
+}
 
 export interface ComponentsObject {
   schemas?: Record<string, SchemaObject>;

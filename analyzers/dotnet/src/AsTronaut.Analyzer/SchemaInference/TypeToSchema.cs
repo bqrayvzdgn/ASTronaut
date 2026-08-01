@@ -132,10 +132,13 @@ public sealed class TypeToSchema
             }
             if (IsDictionaryLike(def) && generic.TypeArguments.Length == 2)
             {
-                // OpenAPI 3.1: dictionary → object with additionalProperties.
-                // The current IR does not carry additionalProperties; emit as
-                // empty OBJECT for MVP. Iter E may extend the IR.
-                return new Schema { Kind = "OBJECT" };
+                // Dictionary<TKey, TValue> → object with additionalProperties (the
+                // value schema). OpenAPI object keys are always strings.
+                return new Schema
+                {
+                    Kind = "OBJECT",
+                    AdditionalProperties = Map(generic.TypeArguments[1]),
+                };
             }
             // Wrappers we should unwrap: Task<T>, ValueTask<T>, ActionResult<T>.
             if (IsUnwrappableWrapper(def) && generic.TypeArguments.Length == 1)
@@ -144,10 +147,13 @@ public sealed class TypeToSchema
             }
         }
 
-        // Custom class → hoist to SharedSchemas and return REFERENCE.
+        // Custom class → hoist to SharedSchemas and return REFERENCE. A class
+        // marked [JsonPolymorphic] hoists as a discriminated ONE_OF instead.
         if (type is INamedTypeSymbol named && named.TypeKind == TypeKind.Class)
         {
-            return _ctx.GetOrCreateReference(named, () => BuildClassSchema(named));
+            return HasPolymorphism(named)
+                ? _ctx.GetOrCreateReference(named, () => BuildPolymorphicSchema(named))
+                : _ctx.GetOrCreateReference(named, () => BuildClassSchema(named));
         }
         // Interface / struct fallback → empty OBJECT (caller decides).
         return new Schema { Kind = "OBJECT" };
@@ -204,26 +210,74 @@ public sealed class TypeToSchema
         return false;
     }
 
+    // True when `type` is a [JsonPolymorphic] base declaring [JsonDerivedType]s.
+    private static bool HasPolymorphism(INamedTypeSymbol type) =>
+        AttributeReader.HasAttribute(type, "JsonPolymorphic")
+        && AttributeReader.FindAttribute(type, "JsonDerivedType") is not null;
+
+    // [JsonPolymorphic] + [JsonDerivedType(typeof(T), "disc")] → discriminated
+    // ONE_OF: each derived type is a variant, with a value→refName mapping.
+    private Schema BuildPolymorphicSchema(INamedTypeSymbol baseType)
+    {
+        var variants = new List<Schema>();
+        var mapping = new Dictionary<string, string>();
+
+        foreach (var attr in AttributeReader.FindAttributes(baseType, "JsonDerivedType"))
+        {
+            if (attr.ConstructorArguments.Length == 0) continue;
+            if (attr.ConstructorArguments[0].Value is not INamedTypeSymbol derivedType) continue;
+
+            var variant = Map(derivedType); // REFERENCE to the hoisted derived schema
+            variants.Add(variant);
+
+            if (attr.ConstructorArguments.Length >= 2 && variant.RefName is not null)
+            {
+                var disc = attr.ConstructorArguments[1].Value?.ToString();
+                if (!string.IsNullOrEmpty(disc)) mapping[disc!] = variant.RefName;
+            }
+        }
+
+        var propAttr = AttributeReader.FindAttribute(baseType, "JsonPolymorphic");
+        var propName = propAttr is null
+            ? "$type"
+            : AttributeReader.GetNamedStringArg(propAttr, "TypeDiscriminatorPropertyName") ?? "$type";
+
+        return new Schema
+        {
+            Kind = "ONE_OF",
+            Variants = variants,
+            Discriminator = propName,
+            DiscriminatorMapping = mapping.Count > 0 ? mapping : null,
+        };
+    }
+
     private Schema BuildClassSchema(INamedTypeSymbol type)
     {
         var properties = new Dictionary<string, Schema>();
         var required = new List<string>();
 
-        foreach (var member in type.GetMembers().OfType<IPropertySymbol>())
+        // Walk the inheritance chain most-derived first so derived properties
+        // win over inherited ones with the same serialized name.
+        for (var t = type; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
         {
-            if (member.DeclaredAccessibility != Accessibility.Public) continue;
-            if (member.IsStatic || member.IsIndexer) continue;
-            if (member.GetMethod is null) continue;
-            if (IsJsonIgnored(member)) continue;
-
-            var propName = ResolvePropertyName(member);
-            var propSchema = Map(member.Type);
-            propSchema = DataAnnotationReader.Apply(propSchema, member);
-            properties[propName] = propSchema;
-
-            if (IsRequired(member))
+            foreach (var member in t.GetMembers().OfType<IPropertySymbol>())
             {
-                required.Add(propName);
+                if (member.DeclaredAccessibility != Accessibility.Public) continue;
+                if (member.IsStatic || member.IsIndexer) continue;
+                if (member.GetMethod is null) continue;
+                if (IsJsonIgnored(member)) continue;
+
+                var propName = ResolvePropertyName(member);
+                if (properties.ContainsKey(propName)) continue;
+
+                var propSchema = Map(member.Type);
+                propSchema = DataAnnotationReader.Apply(propSchema, member);
+                properties[propName] = propSchema;
+
+                if (IsRequired(member))
+                {
+                    required.Add(propName);
+                }
             }
         }
 

@@ -54,6 +54,12 @@ export interface Schema {
   description?: string;
   defaultValue?: string;
   example?: string;
+  /** For OBJECT maps: schema of the value type → OpenAPI additionalProperties. */
+  additionalProperties?: Schema;
+  /** For polymorphic ONE_OF: discriminator property name (e.g. "$type"). */
+  discriminator?: string;
+  /** discriminator value → ref name of the variant schema. */
+  discriminatorMapping?: Record<string, string>;
 }
 
 export interface ParamInfo {

@@ -71,6 +71,9 @@ export const schemaSchema: z.ZodType<unknown> = z.lazy(() =>
       description: z.string().optional(),
       defaultValue: z.string().optional(),
       example: z.string().optional(),
+      additionalProperties: schemaSchema.optional(),
+      discriminator: z.string().optional(),
+      discriminatorMapping: z.record(z.string(), z.string()).optional(),
     })
     .strict(),
 );
