@@ -11,7 +11,7 @@
 
   <!-- Pulls the ASP.NET Core reference assemblies into the test host so
        TestCompilation can hand Roslyn a reference set that resolves
-       [ApiController], MapGet, HttpContext, etc. -->
+       [ApiController], ControllerBase, [HttpGet], HttpContext, etc. -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
