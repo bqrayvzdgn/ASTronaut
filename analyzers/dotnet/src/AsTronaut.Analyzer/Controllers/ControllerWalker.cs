@@ -236,7 +236,11 @@ public sealed class ControllerWalker
             {
                 Name = p.Name,
                 Schema = schema,
-                Required = !p.IsOptional && !TypeClassifier.IsNullable(p.Type),
+                // Required when the type/optionality says so, OR an explicit
+                // [Required] is present (which overrides a nullable annotation) —
+                // matching how DTO properties are handled in TypeToSchema.
+                Required = (!p.IsOptional && !TypeClassifier.IsNullable(p.Type))
+                    || DataAnnotationReader.HasRequired(p),
             };
             if (docs.Params.TryGetValue(p.Name, out var paramDoc))
             {
