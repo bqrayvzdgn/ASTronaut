@@ -54,11 +54,12 @@ function toParameter(
 }
 
 function toRequestBody(body: BodyInfo): RequestBodyObject {
-  const out: RequestBodyObject = {
-    content: {
-      [body.contentType]: { schema: schemaToJsonSchema(body.schema) },
-    },
-  };
+  const jsonSchema = schemaToJsonSchema(body.schema);
+  const types =
+    body.contentTypes && body.contentTypes.length > 0 ? body.contentTypes : [body.contentType];
+  const content: RequestBodyObject["content"] = {};
+  for (const ct of types) content[ct] = { schema: jsonSchema };
+  const out: RequestBodyObject = { content };
   if (body.required) out.required = true;
   return out;
 }
@@ -77,8 +78,13 @@ function buildResponses(responses: ResponseInfo[] | undefined): Record<string, R
 function toResponseObject(response: ResponseInfo): ResponseObject {
   const out: ResponseObject = { description: response.description };
   if (response.schema) {
-    const contentType = response.contentType ?? "application/json";
-    out.content = { [contentType]: { schema: schemaToJsonSchema(response.schema) } };
+    const jsonSchema = schemaToJsonSchema(response.schema);
+    const types =
+      response.contentTypes && response.contentTypes.length > 0
+        ? response.contentTypes
+        : [response.contentType ?? "application/json"];
+    out.content = {};
+    for (const ct of types) out.content[ct] = { schema: jsonSchema };
   }
   if (response.headers && Object.keys(response.headers).length > 0) {
     out.headers = {};

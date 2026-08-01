@@ -10,7 +10,7 @@ import {
   runAnalyzer,
 } from "@astronaut/parser-bridge";
 import { detectAspnetProject } from "../detect.js";
-import { readProjectInfo } from "../projectInfo.js";
+import { readProjectInfoFor } from "../projectInfo.js";
 import { ui } from "../ui.js";
 
 export interface AnalyzeOptions {
@@ -28,11 +28,11 @@ export async function analyzeCommand(rawPath: string, options: AnalyzeOptions): 
   const detected = detectAspnetProject(projectPath);
   if (!detected) {
     ui.error(
-      `No supported project detected at ${projectPath}. Expected a directory containing a .csproj or a .csproj file directly.`,
+      `No supported project detected at ${projectPath}. Expected a directory containing a .csproj or .sln, or such a file directly.`,
     );
     return 1;
   }
-  ui.dim(`Detected: ${detected.framework} (${detected.csprojPath})`);
+  ui.dim(`Detected: ${detected.framework} ${detected.kind} (${detected.path})`);
 
   let result: ParseResult;
   try {
@@ -52,7 +52,7 @@ export async function analyzeCommand(rawPath: string, options: AnalyzeOptions): 
     return 1;
   }
 
-  const projectInfo = readProjectInfo(detected.csprojPath);
+  const projectInfo = readProjectInfoFor(detected);
   const doc = toOpenApi(result, {
     title: options.title ?? projectInfo.title,
     version: options.version ?? projectInfo.version,

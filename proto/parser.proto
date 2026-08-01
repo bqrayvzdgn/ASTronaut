@@ -70,9 +70,12 @@ message ParamInfo {
 }
 
 message BodyInfo {
-  string content_type = 1;   // e.g. "application/json", "multipart/form-data"
+  string content_type = 1;   // primary/default content type, e.g. "application/json"
   Schema schema = 2;
   bool required = 3;
+  // Full set of accepted content types when more than one applies (from
+  // [Consumes]); all share `schema`. When empty, `content_type` is the only one.
+  repeated string content_types = 4;
 }
 
 message ResponseInfo {
@@ -81,6 +84,9 @@ message ResponseInfo {
   optional Schema schema = 3;
   string content_type = 4;   // default "application/json" if schema present
   map<string, ParamInfo> headers = 5;
+  // Full set of produced content types when more than one applies (from
+  // [Produces]); all share `schema`. When empty, `content_type` is the only one.
+  repeated string content_types = 6;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -127,6 +133,15 @@ message Schema {
   string description = 11;
   optional string default_value = 12;   // JSON-serialized literal
   optional string example = 13;         // JSON-serialized literal
+
+  // For OBJECT maps/dictionaries: schema of the value type. Generator emits it
+  // as OpenAPI `additionalProperties`. When absent on an OBJECT, no constraint.
+  optional Schema additional_properties = 14;
+
+  // For polymorphic ONE_OF: discriminator property name (e.g. "$type") and the
+  // mapping from discriminator value → ref_name of the variant schema.
+  optional string discriminator = 15;
+  map<string, string> discriminator_mapping = 16;
 }
 
 message Constraints {

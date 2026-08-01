@@ -54,6 +54,12 @@ export interface Schema {
   description?: string;
   defaultValue?: string;
   example?: string;
+  /** For OBJECT maps: schema of the value type → OpenAPI additionalProperties. */
+  additionalProperties?: Schema;
+  /** For polymorphic ONE_OF: discriminator property name (e.g. "$type"). */
+  discriminator?: string;
+  /** discriminator value → ref name of the variant schema. */
+  discriminatorMapping?: Record<string, string>;
 }
 
 export interface ParamInfo {
@@ -68,6 +74,8 @@ export interface BodyInfo {
   contentType: string;
   schema: Schema;
   required: boolean;
+  /** All accepted content types (from [Consumes]); all share `schema`. */
+  contentTypes?: string[];
 }
 
 export interface ResponseInfo {
@@ -76,6 +84,8 @@ export interface ResponseInfo {
   schema?: Schema;
   contentType?: string;
   headers?: Record<string, ParamInfo>;
+  /** All produced content types (from [Produces]); all share `schema`. */
+  contentTypes?: string[];
 }
 
 export interface AuthInfo {

@@ -1,4 +1,5 @@
 using AsTronaut.Analyzer.Controllers;
+using AsTronaut.Analyzer.Diagnostics;
 using AsTronaut.Analyzer.Ir;
 using AsTronaut.Analyzer.SchemaInference;
 using Microsoft.CodeAnalysis;
@@ -35,6 +36,8 @@ public sealed class MinimalApiWalker
     private readonly string _repoRoot;
     private readonly SchemaContext _schemaContext;
     private readonly List<RouteInfo> _routes = new();
+    private readonly List<ParseError> _errors = new();
+    private readonly bool _stringEnums;
     private readonly Dictionary<ISymbol, string> _groupPrefixes =
         new(SymbolEqualityComparer.Default);
 
@@ -43,9 +46,11 @@ public sealed class MinimalApiWalker
         _compilation = compilation;
         _repoRoot = repoRoot;
         _schemaContext = schemaContext;
+        _stringEnums = EnumConfig.UsesStringEnumsByDefault(compilation);
     }
 
     public IReadOnlyList<RouteInfo> Routes => _routes;
+    public IReadOnlyList<ParseError> Errors => _errors;
 
     public void Walk()
     {
@@ -95,7 +100,13 @@ public sealed class MinimalApiWalker
             if (!IsRoutingExtension(inv, model)) continue;
 
             var pattern = GetStringLiteral(inv.ArgumentList.Arguments[0].Expression);
-            if (pattern is null) continue;
+            if (pattern is null)
+            {
+                AddDiagnostic(inv, DiagnosticCodes.DynamicRoutePath,
+                    $"{methodName} with a non-literal route path was skipped "
+                    + "(only string-literal paths are supported).");
+                continue;
+            }
 
             var prefix = ResolveReceiverPrefix(inv, model);
             var combined = CombinePath(prefix, pattern);
@@ -213,7 +224,7 @@ public sealed class MinimalApiWalker
         var headerParams = new List<ParamInfo>();
         BodyInfo? body = null;
 
-        var typeMapper = new TypeToSchema(_schemaContext);
+        var typeMapper = new TypeToSchema(_schemaContext, _stringEnums);
         var handlerParams = ExtractHandlerParameters(handler, model);
         ITypeSymbol? returnType = ExtractHandlerReturnType(handler, model);
 
@@ -241,7 +252,7 @@ public sealed class MinimalApiWalker
                 case Binding.Body:
                     body = new BodyInfo
                     {
-                        ContentType = "application/json",
+                        ContentType = IsFormFileType(hp.Type) ? "multipart/form-data" : "application/json",
                         Schema = schema,
                         Required = hp.Required,
                     };
@@ -265,16 +276,26 @@ public sealed class MinimalApiWalker
 
         // For method-reference handlers, pull XML doc, [ProducesResponseType],
         // and [Authorize] from the referenced method (lambdas don't carry these).
-        var handlerMethod = handler is not LambdaExpressionSyntax
+        var isMethodReference = handler is not LambdaExpressionSyntax;
+        var handlerMethod = isMethodReference
             ? ResolveMethodGroup(handler, model)
             : null;
+        if (isMethodReference && handlerMethod is null)
+        {
+            AddDiagnostic(mapInvocation, DiagnosticCodes.UnresolvedHandler,
+                $"Handler for {verb} {parsed.NormalizedPath} could not be resolved; "
+                + "its parameters and responses may be incomplete.");
+        }
 
         var declaredResponses = handlerMethod is not null
             ? ResponseTypeReader.Read(handlerMethod, typeMapper)
             : new List<ResponseInfo>();
         var responses = declaredResponses.Count > 0
             ? declaredResponses
-            : BuildResponses(returnType, typeMapper, verb);
+            // TypedResults (Results<Ok<T>, NotFound>, Ok<T>, ...) expand into one
+            // response per member; otherwise infer from the plain return type.
+            : TypedResultsReader.TryRead(returnType, typeMapper)
+              ?? BuildResponses(returnType, typeMapper, verb);
         route = route with { Responses = responses };
 
         if (handlerMethod is not null)
@@ -458,6 +479,22 @@ public sealed class MinimalApiWalker
             or "global::System.TimeOnly"
             or "global::System.TimeSpan"
             or "global::System.Uri";
+    }
+
+    // IFormFile, IFormFileCollection, or a generic collection of IFormFile.
+    private static bool IsFormFileType(ITypeSymbol type)
+    {
+        if (type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                .StartsWith("global::Microsoft.AspNetCore.Http.IFormFile", StringComparison.Ordinal))
+        {
+            return true;
+        }
+        if (type is INamedTypeSymbol { IsGenericType: true, TypeArguments.Length: 1 } g)
+        {
+            return g.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                == "global::Microsoft.AspNetCore.Http.IFormFile";
+        }
+        return false;
     }
 
     private static bool IsNullable(ITypeSymbol type)
@@ -662,6 +699,19 @@ public sealed class MinimalApiWalker
             Line = span.StartLinePosition.Line + 1,
             Column = span.StartLinePosition.Character + 1,
         };
+    }
+
+    private void AddDiagnostic(SyntaxNode node, string code, string message, string severity = "warning")
+    {
+        var span = node.GetLocation().GetLineSpan();
+        _errors.Add(new ParseError
+        {
+            File = NormalizePath(span.Path),
+            Line = span.StartLinePosition.Line + 1,
+            Message = message,
+            Severity = severity,
+            Code = code,
+        });
     }
 
     private string NormalizePath(string path)

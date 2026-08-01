@@ -61,21 +61,33 @@ public static class Program
     {
         var stopwatch = Stopwatch.StartNew();
 
-        var compilation = await ProjectLoader.LoadAsync(projectPath);
-        if (compilation is null)
+        var loadResult = await ProjectLoader.LoadAsync(projectPath, repoRoot);
+        if (loadResult.Compilations.Count == 0)
         {
             return 1;
         }
 
+        // One shared SchemaContext across every project so a DTO used by more
+        // than one project is hoisted exactly once.
         var schemaContext = new SchemaContext();
-        var controllerWalker = new ControllerWalker(compilation, repoRoot, schemaContext);
-        controllerWalker.Walk();
+        var routes = new List<RouteInfo>();
+        var errors = new List<ParseError>(loadResult.Diagnostics);
+        var filesScanned = 0;
 
-        var minimalWalker = new MinimalApiWalker(compilation, repoRoot, schemaContext);
-        minimalWalker.Walk();
+        foreach (var compilation in loadResult.Compilations)
+        {
+            var controllerWalker = new ControllerWalker(compilation, repoRoot, schemaContext);
+            controllerWalker.Walk();
 
-        var routes = controllerWalker.Routes.Concat(minimalWalker.Routes).ToList();
-        var errors = controllerWalker.Errors.ToList();
+            var minimalWalker = new MinimalApiWalker(compilation, repoRoot, schemaContext);
+            minimalWalker.Walk();
+
+            routes.AddRange(controllerWalker.Routes);
+            routes.AddRange(minimalWalker.Routes);
+            errors.AddRange(controllerWalker.Errors);
+            errors.AddRange(minimalWalker.Errors);
+            filesScanned += compilation.SyntaxTrees.Count();
+        }
 
         var result = new ParseResult
         {
@@ -84,7 +96,7 @@ public static class Program
             Metadata = new ParserMetadata
             {
                 Framework = "aspnet",
-                FilesScanned = compilation.SyntaxTrees.Count(),
+                FilesScanned = filesScanned,
                 DurationMs = stopwatch.ElapsedMilliseconds,
                 ParserVersion = ParserVersion,
             },

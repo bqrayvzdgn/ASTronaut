@@ -25,7 +25,7 @@ function buildJsonSchema(schema: Schema): SchemaObject {
     case "REFERENCE":
       return buildReference(schema);
     case "ONE_OF":
-      return { oneOf: (schema.variants ?? []).map(schemaToJsonSchema) };
+      return buildOneOf(schema);
     case "ANY_OF":
       return { anyOf: (schema.variants ?? []).map(schemaToJsonSchema) };
     case "ALL_OF":
@@ -54,6 +54,9 @@ function buildObject(schema: Schema): SchemaObject {
   if (schema.requiredProperties && schema.requiredProperties.length > 0) {
     out.required = [...schema.requiredProperties];
   }
+  if (schema.additionalProperties) {
+    out.additionalProperties = schemaToJsonSchema(schema.additionalProperties);
+  }
   applyCommon(out, schema);
   applyConstraints(out, schema.constraints);
   return out;
@@ -74,6 +77,21 @@ function buildReference(schema: Schema): SchemaObject {
     throw new Error("REFERENCE schema is missing refName");
   }
   return { $ref: `#/components/schemas/${schema.refName}` };
+}
+
+function buildOneOf(schema: Schema): SchemaObject {
+  const out: SchemaObject = { oneOf: (schema.variants ?? []).map(schemaToJsonSchema) };
+  if (schema.discriminator) {
+    out.discriminator = { propertyName: schema.discriminator };
+    if (schema.discriminatorMapping && Object.keys(schema.discriminatorMapping).length > 0) {
+      const mapping: Record<string, string> = {};
+      for (const [value, refName] of Object.entries(schema.discriminatorMapping)) {
+        mapping[value] = `#/components/schemas/${refName}`;
+      }
+      out.discriminator.mapping = mapping;
+    }
+  }
+  return out;
 }
 
 function applyCommon(out: SchemaObject, schema: Schema): void {

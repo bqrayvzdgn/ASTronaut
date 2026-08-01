@@ -1,10 +1,22 @@
 import { readFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
+import type { DetectedProject } from "./detect.js";
 
 export interface ProjectInfo {
   title: string;
   version: string;
   description?: string;
+}
+
+// Picks the right metadata source for a detected entry. A solution has no single
+// csproj to read, so its title falls back to the solution file name (users can
+// still override with --title / --version-tag).
+export function readProjectInfoFor(detected: DetectedProject): ProjectInfo {
+  if (detected.kind === "solution") {
+    const title = basename(detected.path).replace(/\.(sln|slnx)$/i, "");
+    return { title: title || "API", version: "0.0.0" };
+  }
+  return readProjectInfo(detected.path);
 }
 
 // Reads a .csproj as text and pulls <AssemblyName>, <Version>, <Description>
