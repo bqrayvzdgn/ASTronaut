@@ -290,7 +290,10 @@ public sealed class MinimalApiWalker
             : new List<ResponseInfo>();
         var responses = declaredResponses.Count > 0
             ? declaredResponses
-            : BuildResponses(returnType, typeMapper, verb);
+            // TypedResults (Results<Ok<T>, NotFound>, Ok<T>, ...) expand into one
+            // response per member; otherwise infer from the plain return type.
+            : TypedResultsReader.TryRead(returnType, typeMapper)
+              ?? BuildResponses(returnType, typeMapper, verb);
         route = route with { Responses = responses };
 
         if (handlerMethod is not null)
