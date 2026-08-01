@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using AsTronaut.Analyzer.Controllers;
+using AsTronaut.Analyzer.Diagnostics;
 using AsTronaut.Analyzer.Discovery;
 using AsTronaut.Analyzer.Ir;
 using AsTronaut.Analyzer.Logging;
@@ -64,13 +65,29 @@ public static class Program
         var loadResult = await ProjectLoader.LoadAsync(projectPath, repoRoot);
         if (loadResult.Compilations.Count == 0)
         {
+            // Nothing to analyze. Still emit a valid ParseResult so the (E001)
+            // load-failure diagnostics are visible on stdout and `--strict`
+            // consumers can act on them; the exit code stays 1.
+            var failure = new ParseResult
+            {
+                Errors = loadResult.Diagnostics.ToList(),
+                Metadata = new ParserMetadata
+                {
+                    Framework = "aspnet",
+                    FilesScanned = 0,
+                    DurationMs = stopwatch.ElapsedMilliseconds,
+                    ParserVersion = ParserVersion,
+                },
+            };
+            Console.Out.WriteLine(JsonSerializer.Serialize(failure, BuildJsonOptions()));
             return 1;
         }
 
         // One shared SchemaContext across every project so a DTO used by more
         // than one project is hoisted exactly once.
         var schemaContext = new SchemaContext();
-        var routes = new List<RouteInfo>();
+        var controllerRoutes = new List<RouteInfo>();
+        var minimalRoutes = new List<RouteInfo>();
         var errors = new List<ParseError>(loadResult.Diagnostics);
         var filesScanned = 0;
 
@@ -82,12 +99,14 @@ public static class Program
             var minimalWalker = new MinimalApiWalker(compilation, repoRoot, schemaContext);
             minimalWalker.Walk();
 
-            routes.AddRange(controllerWalker.Routes);
-            routes.AddRange(minimalWalker.Routes);
+            controllerRoutes.AddRange(controllerWalker.Routes);
+            minimalRoutes.AddRange(minimalWalker.Routes);
             errors.AddRange(controllerWalker.Errors);
             errors.AddRange(minimalWalker.Errors);
             filesScanned += compilation.SyntaxTrees.Count();
         }
+
+        var routes = MergeRoutes(controllerRoutes, minimalRoutes, errors);
 
         var result = new ParseResult
         {
@@ -109,6 +128,39 @@ public static class Program
         Console.Out.WriteLine(json);
         return 0;
     }
+
+    // Controller routes win over minimal-API routes on an exact (Method, Path)
+    // collision across the two sources: the same endpoint surfaced by both walkers
+    // would otherwise be emitted twice. Duplicates within a single source are left
+    // untouched — those are genuinely distinct declarations for a downstream layer
+    // to reconcile, not a walker double-count.
+    private static List<RouteInfo> MergeRoutes(
+        List<RouteInfo> controllerRoutes, List<RouteInfo> minimalRoutes, List<ParseError> errors)
+    {
+        var merged = new List<RouteInfo>(controllerRoutes);
+        var controllerKeys = new HashSet<string>(controllerRoutes.Select(RouteKey));
+
+        foreach (var route in minimalRoutes)
+        {
+            if (controllerKeys.Contains(RouteKey(route)))
+            {
+                errors.Add(new ParseError
+                {
+                    File = route.Source.File,
+                    Line = route.Source.Line,
+                    Message = $"Duplicate route {route.Method} {route.Path} emitted by both the controller and minimal-API walkers; dropped the minimal-API duplicate.",
+                    Severity = "warning",
+                    Code = DiagnosticCodes.DuplicateRoute,
+                });
+                continue;
+            }
+            merged.Add(route);
+        }
+        return merged;
+    }
+
+    private static string RouteKey(RouteInfo route) =>
+        $"{route.Method.ToUpperInvariant()} {route.Path}";
 
     private static JsonSerializerOptions BuildJsonOptions()
     {
