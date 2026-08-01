@@ -90,6 +90,17 @@ function spawnCollect(cmd: string, args: string[], timeoutMs: number): Promise<S
 
     child.on("error", (err) => {
       clearTimeout(timer);
+      // A missing executable surfaces as ENOENT here. For `dotnet` specifically
+      // this means the .NET SDK isn't on PATH — turn the raw spawn error into a
+      // friendly, actionable message instead of a generic "Unexpected error".
+      if (cmd === "dotnet" && (err as NodeJS.ErrnoException).code === "ENOENT") {
+        const friendly = new Error(
+          ".NET SDK not found on PATH. Install .NET 8+ and ensure `dotnet` is available.",
+        );
+        friendly.name = "DotnetNotFoundError";
+        rejectPromise(friendly);
+        return;
+      }
       rejectPromise(err);
     });
 
