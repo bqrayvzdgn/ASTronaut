@@ -41,3 +41,34 @@ jobs:
           dotnet-version: 8.0.x
 
       - run: dotnet test analyzers/dotnet/Tests/AsTronaut.Analyzer.Tests/AsTronaut.Analyzer.Tests.csproj -c Release
+
+  e2e:
+    name: End-to-end (analyzer → OpenAPI 3.1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:analyzers
+      - run: pnpm build
+
+      # Restore the fixture projects so MSBuildWorkspace can load them on a fresh
+      # checkout (obj/ is gitignored).
+      - name: Restore fixture projects
+        run: |
+          for proj in fixtures/dotnet/*/*.csproj; do
+            [ -f "$proj" ] && dotnet restore "$proj"
+          done
+
+      - run: pnpm test:e2e
