@@ -29,6 +29,10 @@ fixtures/dotnet/**/obj/
 coverage/
 .vitest/
 
+# Locally generated OpenAPI output (from ad-hoc analyze runs)
+/openapi.yaml
+/openapi.*.yaml
+
 # Editor / OS
 .vscode/
 .idea/
