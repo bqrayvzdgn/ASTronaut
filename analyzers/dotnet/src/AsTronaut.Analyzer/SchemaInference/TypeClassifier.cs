@@ -38,15 +38,43 @@ public static class TypeClassifier
 
         if (IsFormFileType(type)) return false;
         if (IsEnumerable(type)) return false;
+        // A scalar is route/query data, never a service. This matters for the
+        // class-typed scalars (string, Uri): they have no public settable property
+        // and would otherwise be misread as opaque services by the heuristic below
+        // and silently dropped. (Struct scalars like Guid/DateTime dodge it anyway.)
+        if (IsSimpleType(type)) return false;
         if (type.TypeKind == TypeKind.Interface) return true;
 
-        // The DI container is not visible to static analysis, so we cannot know
-        // what was registered. Conservative heuristic: a concrete (non-abstract)
-        // class that is not a record and exposes no bindable surface (no public
-        // writable instance property) is an opaque service/marker (AppDbContext,
-        // a hand-written service). A DTO always has at least one settable/init
-        // property or is a positional record, so real bodies are never flipped.
-        if (type is INamedTypeSymbol named2) return HasNoBindableSurface(named2);
+        // An EF Core DbContext is the classic constructor-injected concrete
+        // service, but — unlike a hand-written service — it DOES expose public
+        // settable properties (DbSet<T>), so the HasNoBindableSurface heuristic
+        // below would misread it as a request body. Detect it by base type.
+        if (type is INamedTypeSymbol named2)
+        {
+            if (DerivesFromDbContext(named2)) return true;
+
+            // The DI container is not visible to static analysis, so we cannot know
+            // what was registered. Conservative heuristic: a concrete (non-abstract)
+            // class that is not a record and exposes no bindable surface (no public
+            // writable instance property) is an opaque service/marker (a hand-written
+            // service). A DTO always has at least one settable/init property or is a
+            // positional record, so real bodies are never flipped.
+            return HasNoBindableSurface(named2);
+        }
+        return false;
+    }
+
+    // True when the type derives (transitively) from EF Core's DbContext. Matched
+    // by fully-qualified name so no EF Core assembly reference is required.
+    private static bool DerivesFromDbContext(INamedTypeSymbol type)
+    {
+        for (var t = type.BaseType; t is not null; t = t.BaseType)
+        {
+            if (t.ToDisplayString(Fq) == "global::Microsoft.EntityFrameworkCore.DbContext")
+            {
+                return true;
+            }
+        }
         return false;
     }
 

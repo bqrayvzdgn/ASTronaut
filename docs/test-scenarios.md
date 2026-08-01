@@ -127,14 +127,15 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | E4 | `[FromBody]` | | request body | ✅ |
 | E5 | `[FromForm]` / `IFormFile` | | multipart/form-data + binary | ⚠️ |
 | E6 | Attribute'suz basit param → query çıkarımı | `int page = 1` | query param | ✅ |
+| E6b | Attribute'suz **string** param → query çıkarımı | `string term` | query param (service sanılıp düşmez) | ✅ WS-std1 |
 | E7 | Attribute'suz complex tip → body çıkarımı | `CreateDto dto` | body | ✅ |
 | E8 | Nullable param `string? q` | | required=false | ✅ |
 | E9 | Default değerli param `int size = 20` | | required=false | ✅ |
-| E11b | **Concrete class** service (`AppDbContext`) | ctor DI ama attribute yok | **BUG:** interface değil → service sayılmaz → body'ye bağlanır | ✗ |
+| E11b | **Concrete class** service (`AppDbContext`) | ctor DI ama attribute yok | EF Core `DbContext` base-type ile tespit → service, body'ye bağlanmaz | ✅ WS-std1 |
 | E12 | `[AsParameters]` struct binding | | her alan ayrı param | ❓ |
 | E13 | `[FromKeyedServices]` | | atlanır (switch'te var) | ✅ |
 | E14 | Array/list query `[FromQuery] int[] ids` | | array query param | ❓ |
-| E15 | Enum query param | `[FromQuery] Status s` | **BUG:** `TypeClassifier.IsSimpleType` enum'ı simple saymaz → body'ye yanlış bağlanır | ✗ |
+| E15 | Enum query param | `[FromQuery] Status s` | `IsSimpleType` enum'ı simple sayar (Nullable dahil) → query param | ✅ |
 | E16 | Aynı isimli path+query çakışması | | duplicate param invariant korunur | ✅ |
 | E17 | `[BindRequired]` / `[BindNever]` | | required / atla | ❓ |
 | E18 | Complex tip `[FromQuery]` (nested binding) | | properties → query | ❓ |
@@ -250,7 +251,8 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | ID | Senaryo | Beklenen | Durum |
 | --- | --- | --- | --- |
 | L1 | `[Required]` | required listesi | ⚠️ |
-| L1b | `[Required] string? x` (nullable + Required) | | **BUG:** required'lık yalnız nullability'den; `[Required]` DataAnnotation olarak uygulanmaz → required olmaz | ✗ |
+| L1b | `[Required] string? x` (nullable + Required) — DTO property | | `HasRequired` → required (nullability override) | ✅ |
+| L1c | `[Required] string? x` — **action parametresi** | | parametre seviyesinde de `HasRequired` uygulanır → required | ✅ WS-std1 |
 | L2 | `[StringLength(120,MinimumLength=3)]` | min/maxLength | ✅ |
 | L3 | `[MinLength]`/`[MaxLength]` | min/maxLength | ✅ |
 | L4 | `[Range(1,100)]` (int) | minimum/maximum | ✅ |
