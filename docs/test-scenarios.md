@@ -83,11 +83,11 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | B10 | `[ApiController]` olmayan controller | plain `Controller` | emit edilir mi? | ❓ |
 | B11 | `ControllerBase` yerine `Controller` (MVC View) | | API mı sayılır? | ❓ |
 | B12 | Abstract/base controller'dan miras action | base sınıfta `[HttpGet]` | **çalışıyor:** `CollectActionMethods` kalıtım zincirini yürür (base tipleri tarar, `ControllerBase`/`Controller`/`System.Object`'te durur, imza-bazlı dedup) → base action'lar dahil (U11/WS2 ile örtüşür) | ✅ |
-| B13 | Generic controller | `Ctrl<T>` | davranış? | ✗ |
+| B13 | Generic controller | `Ctrl<T>` | non-abstract açık generic controller **atlanır** + **W004** emit edilir; concrete `X : Base<T>` etkilenmez | ✅ |
 | B14 | `[ApiVersion]` / versiyonlu route | Asp.Versioning | desteklenmiyor | ✗ |
 | B15 | `[NonAction]` / `[ApiExplorerSettings(IgnoreApi)]` | | **çalışıyor:** `WalkController` her ikisini de method ve controller düzeyinde dışlar → route üretilmez | ✅ |
 | B16 | Private/protected action | | route üretilmemeli | ❓ |
-| B17 | `[AcceptVerbs]` çoklu verb | | davranış? | ✗ |
+| B17 | `[AcceptVerbs]` çoklu verb | `[AcceptVerbs("GET","POST")]` | **her verb için ayrı route** (ctor argümanları okunur, case-insensitive) | ✅ |
 
 ## C. Routing — Minimal API  *(kaldırıldı)*
 
@@ -305,7 +305,7 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | O3 | `--strict` yokken error | çıktı yine üretilir | ✅ |
 | O4 | 0 route bulundu | "0 routes", exit 1 | ✅ |
 | O5 | Diagnostic kodları — emisyonda **W003/W007** + **E001** var (W004/W005 tanımlı, henüz emit edilmiyor) | W003=workspace/solution yükleme, W007=dizinde çoklu proje, E001=proje/derleme yüklenemedi | ⚠️ |
-| O5b | MVC tarafı sessiz atlama | abstract controller, çözülemeyen action body | **hiç diagnostic yok** (sessiz) | ✗ |
+| O5b | MVC tarafı sessiz atlama | açık generic controller | atlanan açık generic controller artık **W004** uyarısı üretir (abstract controller hâlâ sessiz; W005 false-positive riski nedeniyle ertelendi) | ⚠️ |
 | O6 | Kısmen parse edilebilen proje | parse edilenler + uyarılar | ❓ |
 | O7 | Derlenmeyen C# (syntax hatası) | graceful, diagnostic | ❓ |
 | O8 | Eksik referans/paket | davranış? | ❓ |
@@ -430,8 +430,8 @@ test edilmeli.
 | Kod | Anlamı | Tetikleyici |
 | --- | --- | --- |
 | **W003** `WorkspaceLoad` | workspace/solution yükleme sorunu | `.sln`/`.slnx` açılamadı → csproj taramasına düşüş |
-| **W004** `SkippedController` | atlanan MVC controller | *tanımlı* (emisyon sonraki turda) |
-| **W005** `UnresolvedResult` | çözülemeyen MVC result body | *tanımlı* (emisyon sonraki turda) |
+| **W004** `SkippedController` | atlanan MVC controller | **emit ediliyor**: non-abstract açık generic controller atlandığında |
+| **W005** `UnresolvedResult` | çözülemeyen MVC result body | *tanımlı, henüz emit edilmiyor* (güvenli tetikleyici yok — no-body 204/DELETE ile ayırt edilemiyor, false-positive riski) |
 | **W007** `MultipleProjects` | dizinde birden çok proje | deterministik seçilen + atlananlar (U17) |
 | **E001** `ProjectLoadFailed` | proje/derleme yüklenemedi | `--strict` ile yakalanabilir hata (WS10/#15) |
 
