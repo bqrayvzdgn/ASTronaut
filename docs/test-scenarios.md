@@ -509,21 +509,25 @@ Analyzer yalnızca `[ApiController]` veya `ControllerBase`/`Controller` türevi 
 **yanlış çıktı** üretenler > eksik özellikler > gözlemlenebilirlik. Standart API
 derinleşmesinin sonraki increment adayları bunlardır.
 
-### Grup 1 — Sessiz YANLIŞ çıktı (en yüksek öncelik)
+### Grup 1 — Sessiz YANLIŞ çıktı  *(✅ çözüldü — PR #28–#34)*
 
-| Ref | Boşluk | Etki |
+> Bu grubun tamamı, kapsamlı tarama sonrası correctness increment'inde (7 paralel PR)
+> önce-kırık testle düzeltildi. Aşağıdaki satırlar tarihsel kayıttır; her biri artık
+> ilgili bölümde (E3/E12/G36/B32/I3/I29/L3b-L15/M19/R2) ✅ ve regresyon testli.
+
+| Ref | Boşluk (çözüldü) | Çözüm |
 | --- | --- | --- |
-| E3/E19 | `[FromHeader/FromQuery/FromRoute(Name="...")]` ad override yok sayılıyor | kebab-case header/query adları C# adıyla çıkar (`X-Trace-Id` → `traceId`) — çok yaygın |
-| G36 | `[ProducesResponseType]` + gövde birlikte → şema kaybı | `[ProducesResponseType(200)]` + `return Ok(dto)` → 200 gövdesiz; en sık kalıp |
-| E12 | `[AsParameters]` flatten edilmiyor → tüm struct body'ye | GET action'da tümüyle yanlış operasyon şekli |
-| B32 | `[MapToApiVersion]` → controller'ın tüm versiyonlarına fan-out | var olmayan `/vX/...` route'ları uydurur |
-| I3 | struct / `record struct` DTO → boş `{}` | `Money`/`Coordinate` value-object property'leri kaybolur |
-| I29 | Global `JsonNamingPolicy` yok sayılıyor (hep camelCase) | snake_case/PascalCase API'lerde tüm wire adları yanlış |
-| L3b/L15 | Koleksiyon uzunluğu yanlış eşleniyor | `[MaxLength(10)] string[]` → maxLength (dizide anlamsız); `[Length] string` → minItems |
-| M19 | oauth2/oidc scheme `flows`/`openIdConnectUrl`'siz | üretilen spec bu şemalarda validator'dan geçmez |
-| R2/R6 | Çoklu-proje DTO dedup derleme sınırında bozuk | aynı DTO iki projede → duplike/şişmiş `components/schemas` |
+| E3/E19 | `[FromHeader/FromQuery/FromRoute(Name="...")]` ad override yok sayılıyordu | `ResolveParamName` attribute `Name`'i okur (#29) |
+| G36 | `[ProducesResponseType]` + gövde → şema kaybı | `CompleteDeclaredSchemas` şemasız status'u gövdeden tamamlar (#30) |
+| E12 | `[AsParameters]` flatten edilmiyordu | per-property path/query açılımı (#29) |
+| B32 | `[MapToApiVersion]` tüm versiyonlara fan-out | action versiyonları ∩ controller versiyonları (#28) |
+| I3 | struct / `record struct` DTO → boş `{}` | `MapInner` Class **veya** Struct kapsar (#32) |
+| I29 | Global `JsonNamingPolicy` yok sayılıyordu | `NamingPolicyConfig.Detect` global tarama (#32) |
+| L3b/L15 | Koleksiyon uzunluğu yanlış eşleniyordu | `schema.Kind` ile minItems/maxItems vs minLength/maxLength (#31) |
+| M19 | oauth2/oidc scheme `flows`/`openIdConnectUrl`'siz | oauth2 `flows:{}`, oidc placeholder URL → spec-valid (#33) |
+| R2/R6 | Çoklu-proje DTO dedup derleme sınırında bozuk | structural FQN dedup anahtarı (#34) |
 
-### Grup 2 — Eksik özellik (kapsam genişletme)
+### Grup 2 — Eksik özellik (kapsam genişletme)  *(sonraki increment adayları)*
 
 | Ref | Boşluk |
 | --- | --- |
@@ -632,17 +636,17 @@ Kapsamı gerçekçi zorlamak için farklı stiller:
 
 ## Öncelik sırası (canlı testte ilk bakılacaklar)
 
-1. **Grup 1 (sessiz yanlış çıktı)** — yukarıdaki boşluk sıralamasının en kritik ekseni;
-   gerçek projede sessizce yanlış OpenAPI üreten satırlar.
+1. **Grup 1 (sessiz yanlış çıktı) ✅ çözüldü (PR #28–#34)** — canlıda düzeltmelerin
+   gerçek projede beklendiği gibi çalıştığını doğrula.
 2. **Round-1 fix doğrulaması (U1–U24 ✅)** — regresyon testi olmayan düzeltmeler.
-3. **Grup 2 (eksik özellik)** — kapsam genişletme adayları; canlıda hangisinin sık çıktığını gözle.
+3. **Grup 2 (eksik özellik)** — sıradaki increment adayları; canlıda hangisinin sık çıktığını gözle.
 4. **Grup 3 + V** — doğruluk nüansı, gözlemlenebilirlik, paradigma körlüğü.
 
 ## Sonraki tur (deferred)
 
 - **Regresyon test turu:** her ✅ fix için `TestCompilation.Walk` tabanlı xUnit +
   gerekli e2e fixture; özellikle **data-annotation constraint değerleri** için test yok.
-- **Grup 1 correctness increment'i:** ad override (E3), ProducesResponseType+gövde (G36),
-  AsParameters (E12), struct DTO (I3), JsonNamingPolicy (I29), koleksiyon uzunluğu (L3b).
+- **Grup 1 correctness increment'i:** ✅ TAMAMLANDI (PR #28–#34) — ad override, G36,
+  AsParameters, MapToApiVersion, struct DTO, JsonNamingPolicy, koleksiyon uzunluğu, oauth2/oidc, çoklu-proje dedup.
 - **Kalan özellikler:** conventional routing, versiyonlamanın diğer biçimleri, Swashbuckle
   metadata, oauth2 flows, W005 emisyonu, cross-cutting (V) için kapsam-dışı diagnostic.
