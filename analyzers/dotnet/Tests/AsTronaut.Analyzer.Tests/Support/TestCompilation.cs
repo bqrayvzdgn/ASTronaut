@@ -20,17 +20,29 @@ public static class TestCompilation
     // Fixed virtual path so SourceLocation.File is stable across machines.
     public const string SourcePath = "Test.cs";
 
-    public static Compilation Create(string source)
+    public static Compilation Create(string source) =>
+        Create(source, "AsTronaut.Analyzer.TestInput");
+
+    // Overload with an explicit assembly name and optional extra references, used
+    // by multi-project scenarios where one project references another's assembly.
+    public static CSharpCompilation Create(
+        string source,
+        string assemblyName,
+        IEnumerable<MetadataReference>? extraReferences = null)
     {
         var tree = CSharpSyntaxTree.ParseText(
             source,
             new CSharpParseOptions(LanguageVersion.Latest),
             path: SourcePath);
 
+        var references = extraReferences is null
+            ? References.Value
+            : References.Value.AddRange(extraReferences);
+
         return CSharpCompilation.Create(
-            assemblyName: "AsTronaut.Analyzer.TestInput",
+            assemblyName: assemblyName,
             syntaxTrees: new[] { tree },
-            references: References.Value,
+            references: references,
             options: new CSharpCompilationOptions(
                 OutputKind.DynamicallyLinkedLibrary,
                 nullableContextOptions: NullableContextOptions.Enable));
@@ -49,6 +61,50 @@ public static class TestCompilation
         var routes = controllers.Routes.ToList();
         var errors = controllers.Errors.ToList();
         return new WalkResult(routes, errors, schemaContext.SharedSchemas);
+    }
+
+    // Two-project scenario: `sharedSource` is compiled and EMITTED to a metadata
+    // (PE) reference, which `consumerSource` then references — so a DTO the
+    // consumer reaches through that reference is a DISTINCT metadata symbol from
+    // the shared project's source symbol, exactly as in a real multi-project
+    // `.sln`. Both compilations are walked with a SINGLE shared SchemaContext
+    // (mirrors Program.AnalyzeAsync), so cross-assembly DTO dedup is exercised.
+    public static WalkResult WalkMultiProject(
+        string sharedSource,
+        string consumerSource,
+        string repoRoot = "")
+    {
+        var shared = Create(sharedSource, "SharedProject");
+        var sharedRef = EmitToMetadataReference(shared);
+        var consumer = Create(consumerSource, "ConsumerProject", new[] { sharedRef });
+
+        var schemaContext = new SchemaContext();
+        var routes = new List<RouteInfo>();
+        var errors = new List<ParseError>();
+        foreach (var compilation in new Compilation[] { shared, consumer })
+        {
+            var walker = new ControllerWalker(compilation, repoRoot, schemaContext);
+            walker.Walk();
+            routes.AddRange(walker.Routes);
+            errors.AddRange(walker.Errors);
+        }
+        return new WalkResult(routes, errors, schemaContext.SharedSchemas);
+    }
+
+    private static MetadataReference EmitToMetadataReference(CSharpCompilation compilation)
+    {
+        var stream = new MemoryStream();
+        var emit = compilation.Emit(stream);
+        if (!emit.Success)
+        {
+            var errors = string.Join(
+                Environment.NewLine,
+                emit.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+            throw new InvalidOperationException(
+                "Shared project failed to compile:" + Environment.NewLine + errors);
+        }
+        stream.Position = 0;
+        return MetadataReference.CreateFromStream(stream);
     }
 
     private static ImmutableArray<MetadataReference> LoadTrustedPlatformReferences()

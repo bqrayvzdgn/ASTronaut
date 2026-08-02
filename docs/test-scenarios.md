@@ -452,11 +452,11 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | ID | Senaryo | Beklenen | Durum |
 | --- | --- | --- | --- |
 | R1 | `.sln` her csproj analiz | her C# projesi için ayrı walker, birleştirilir; C#-dışı atlanır | ⚠️ |
-| R2 | DTO bir kez hoisted (paylaşımlı) | tek `SchemaContext`; **AMA** dedup `SymbolEqualityComparer` → farklı derlemelerdeki aynı tip **farklı symbol** → dedup ıskalar → **duplike/namespace-qualified ikinci kopya** | ⚠️ |
+| R2 | DTO bir kez hoisted (paylaşımlı) | tek `SchemaContext`; dedup anahtarı artık **symbol değil yapısal FQN** (`StructuralKey` = `FullyQualifiedFormat`) → farklı derlemelerdeki aynı tip aynı anahtar → **bir kez hoist**, duplike kopya yok | ✅ |
 | R3 | İki projede aynı isimli farklı DTO | namespace-qualify ile ayrışır (R2 kök-nedeni ile karışabilir) | ⚠️ |
 | R4 | Web olmayan class lib | derlenir, controller yoksa 0 route; DTO'ları bir controller kullanırsa şemaya girer | ✅ |
 | R5 | `.slnx` yeni format | `XDocument` ile parse; bozuk .slnx → dizin taramasına düşüş | ✅ |
-| R6 | Projeler arası tip referansı | metadata referans → symbol çözülür (R2 dedup sınırı geçerli) | ⚠️ |
+| R6 | Projeler arası tip referansı | metadata referans → symbol çözülür; yapısal FQN dedup anahtarı derleme sınırını aşar (R2 fix), tek şema | ✅ |
 | R7 | `.sln` açılamadı / boş solution | `OpenSolutionAsync` exception → W003 + csproj taraması; solution asla hard-fail değil | ✅ |
 | R8 | Dairesel proje referansı | MSBuild grafiği kurar; şema döngüsü placeholder ile kırılır | ⚠️ |
 
