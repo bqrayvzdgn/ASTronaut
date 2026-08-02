@@ -36,6 +36,7 @@ public sealed class ControllerWalker
     private readonly string _repoRoot;
     private readonly SchemaContext _schemaContext;
     private readonly bool _stringEnums;
+    private readonly JsonNamingPolicyKind? _namingPolicy;
 
     public ControllerWalker(Compilation compilation, string repoRoot, SchemaContext schemaContext)
     {
@@ -43,6 +44,7 @@ public sealed class ControllerWalker
         _repoRoot = repoRoot;
         _schemaContext = schemaContext;
         _stringEnums = EnumConfig.UsesStringEnumsByDefault(compilation);
+        _namingPolicy = NamingPolicyConfig.Detect(compilation);
     }
 
     public IReadOnlyList<RouteInfo> Routes => _routes;
@@ -354,7 +356,7 @@ public sealed class ControllerWalker
         var headerParams = new List<ParamInfo>();
         BodyInfo? body = null;
 
-        var typeMapper = new TypeToSchema(_schemaContext, _stringEnums);
+        var typeMapper = new TypeToSchema(_schemaContext, _stringEnums, _namingPolicy);
 
         foreach (var p in method.Parameters)
         {
