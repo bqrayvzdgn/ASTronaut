@@ -326,7 +326,7 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | L1c | `[Required] string? x` — **action parametresi** | parametre seviyesinde de required | ✅ |
 | L2 | `[StringLength(120,MinimumLength=3)]` | maxLength + minLength | ✅ |
 | L3 | `[MinLength]`/`[MaxLength]` (string) | min/maxLength | ✅ |
-| L3b | `[MinLength]`/`[MaxLength]` **koleksiyon** | `[MaxLength(10)] int[]` | minItems/maxItems olmalı; kod **her zaman minLength/maxLength** (tip ayrımı yok) | ⚠️ |
+| L3b | `[MinLength]`/`[MaxLength]` **koleksiyon** (`[MaxLength(10)] int[]`) | hedef tip ARRAY → minItems/maxItems (tip ayrımı yapılır) | ✅ |
 | L4 | `[Range(1,100)]` int | minimum/maximum | ✅ |
 | L5 | `[Range(0.01,1e6)]` double | number bounds | ✅ |
 | L6 | `[RegularExpression]` | pattern | ✅ |
@@ -340,7 +340,7 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | L12 | `[Compare]`/`[CreditCard]` | switch'te case yok → sessizce yoksayılır (çökme yok) | ✅ |
 | L13 | Method param üzerinde annotation | `[Range(1,100)] int size` | param constraint uygulanır | ✅ |
 | L14 | `[Length(min,max)]` (.NET8) koleksiyon | minItems/maxItems | ✅ |
-| L15 | `[Length(min,max)]` (.NET8) **string** | `[Length(3,10)] string` | minLength/maxLength olmalı; kod **minItems/maxItems** (tip ayrımı yok) | ⚠️ |
+| L15 | `[Length(min,max)]` (.NET8) **string** (`[Length(3,10)] string`) | hedef tip string → minLength/maxLength (tip ayrımı yapılır) | ✅ |
 | L16 | `[AllowedValues]`/`[DeniedValues]` (.NET8) | enum'a çevrilebilir; **hiç işlenmiyor** | ✗ |
 | L17 | `[DefaultValue(...)]` | `Schema.DefaultValue` alanı + emitter hazır ama analyzer **doldurmuyor** | ✗ |
 | L18 | `[ReadOnly(true)]` | `readOnly` alanı IR'de yok → işlenmez | ✗ |
@@ -551,9 +551,10 @@ derinleşmesinin sonraki increment adayları bunlardır.
 
 ### Test-boşluğu notu
 
-Data-annotation **constraint değerlerini** (minLength/maxLength/pattern/format) assert
-eden **hiçbir birim test yok** (yalnız fixture var, assertion yok). L2–L11 "✅"
-durumları kod-yolu + emit boru hattına dayanıyor, regresyon testine değil.
+Data-annotation **constraint değerleri** (required/minLength/maxLength/min/max/pattern/
+format + koleksiyon-vs-string ayrımı L3b/L15) artık `DataAnnotationConstraintTests.cs`
+ile assert ediliyor. Kalan L-satırları (`[Length]` koleksiyon L14, format map'leri vb.)
+hâlâ kod-yolu + emit boru hattına dayanıyor.
 
 ---
 
