@@ -226,7 +226,7 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | G32 | `[ProducesResponseType(Type=..,StatusCode=..)]` named args | | status: named; şema: positional `typeof` önce, yoksa named `Type` | ⚠️ |
 | G33 | Collection dönüş `List<T>` / `T[]` | `ActionResult<List<Order>>` | unwrap → ARRAY, items=T | ✅ |
 | G35 | `IResult` / `TypedResults.Ok(x)` (controller içinde) | `IResult Get()=>TypedResults.Ok(x)` | ControllerResultReader `TypedResults`/`Results`'ı tanımaz → `IResult` tipsiz → **200 boş, şema kaybı** | ✗ |
-| G36 | `[ProducesResponseType]` + gövde birlikte | `[ProducesResponseType(200)]` + `return Ok(dto)` | attribute varsa **gövde yok sayılır** → 200 **gövdesiz** (Ok(dto) şeması kaybolur) | ⚠️ |
+| G36 | `[ProducesResponseType]` + gövde birlikte | `[ProducesResponseType(200)]` + `return Ok(dto)` | şemasız bildirilen status gövdeden/dönüş tipinden **tamamlanır** → 200 + dto; attribute'un açık `typeof`/generic şeması korunur, diğer status'lar (404 vb.) bozulmaz | ✅ |
 | G39 | Derin unwrap sınırı | `Task<ActionResult<...>>` 4+ seviye | 4 iterasyonla sınırlı; aşırı derin sarmalayıcı çözülmez | ⚠️ |
 | G40 | `BadRequest(ModelState)` | | 400 + **ModelStateDictionary şeması** (istenmeyen şema riski) | ⚠️ |
 | G41 | `<response code="NNN">` XML doc | | eşleşen status description'ı override edilir | ✅ |
