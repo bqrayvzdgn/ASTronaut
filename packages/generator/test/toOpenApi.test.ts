@@ -156,4 +156,34 @@ describe("toOpenApi — structural invariants", () => {
     const doc = toOpenApi(minimal);
     expect(doc.paths?.["/x"]?.get?.responses.default).toEqual({ description: "" });
   });
+
+  function authFixture(auth: ParseResult["routes"][number]["auth"]): ParseResult {
+    return {
+      routes: [
+        {
+          method: "GET",
+          path: "/secure",
+          auth,
+          source: { file: "x.cs", line: 1, column: 0 },
+        },
+      ],
+      errors: [],
+      metadata: { framework: "aspnet", filesScanned: 1, durationMs: 1, parserVersion: "0.0.1" },
+    };
+  }
+
+  it("emits a flows object for oauth2 schemes (3.1 requires it)", () => {
+    const doc = toOpenApi(authFixture({ type: "oauth2", id: "oauth2" }));
+    const scheme = doc.components?.securitySchemes?.oauth2;
+    expect(scheme?.type).toBe("oauth2");
+    expect(scheme?.flows).toEqual({});
+  });
+
+  it("emits an openIdConnectUrl for openIdConnect schemes (3.1 requires it)", () => {
+    const doc = toOpenApi(authFixture({ type: "openIdConnect", id: "openIdConnect" }));
+    const scheme = doc.components?.securitySchemes?.openIdConnect;
+    expect(scheme?.type).toBe("openIdConnect");
+    expect(typeof scheme?.openIdConnectUrl).toBe("string");
+    expect(() => new URL(scheme?.openIdConnectUrl ?? "")).not.toThrow();
+  });
 });
