@@ -112,7 +112,7 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | B29 | Header versiyonlama | `X-Api-Version: 1.0` | version header param; **hiç modellenmez** | ✗ |
 | B30 | Media-type versiyonlama | `Accept: ...;v=1.0` | content-type varyantı; **hiç modellenmez** | ✗ |
 | B31 | `[ApiVersionNeutral]` | | tüm versiyonlarda tek route; attribute okunmaz ama versiyonsuz zaten tek route → tesadüfen doğru | ⚠️ |
-| B32 | `[MapToApiVersion("2.0")]` action | | action'ı o versiyona kısıtlamalı; **yok sayılır → controller'ın TÜM versiyonlarına fan-out (yanlış route uydurur)** | ✗ |
+| B32 | `[MapToApiVersion("2.0")]` action | | action'ı o versiyon(lar)a kısıtlar; controller'ın diğer versiyonlarına fan-out edilmez (yanlış route uydurulmaz) | ✅ |
 | B33 | Deprecated versiyon `[ApiVersion("1.0",Deprecated=true)]` | | o versiyon `deprecated:true`; named arg okunmaz | ✗ |
 | B34 | Action düzeyinde `[ApiVersion]` (controller değil) | | yalnız controller'dan okunur → yok sayılır | ✗ |
 
@@ -326,7 +326,7 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | L1c | `[Required] string? x` — **action parametresi** | parametre seviyesinde de required | ✅ |
 | L2 | `[StringLength(120,MinimumLength=3)]` | maxLength + minLength | ✅ |
 | L3 | `[MinLength]`/`[MaxLength]` (string) | min/maxLength | ✅ |
-| L3b | `[MinLength]`/`[MaxLength]` **koleksiyon** | `[MaxLength(10)] int[]` | minItems/maxItems olmalı; kod **her zaman minLength/maxLength** (tip ayrımı yok) | ⚠️ |
+| L3b | `[MinLength]`/`[MaxLength]` **koleksiyon** (`[MaxLength(10)] int[]`) | hedef tip ARRAY → minItems/maxItems (tip ayrımı yapılır) | ✅ |
 | L4 | `[Range(1,100)]` int | minimum/maximum | ✅ |
 | L5 | `[Range(0.01,1e6)]` double | number bounds | ✅ |
 | L6 | `[RegularExpression]` | pattern | ✅ |
@@ -340,7 +340,7 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | L12 | `[Compare]`/`[CreditCard]` | switch'te case yok → sessizce yoksayılır (çökme yok) | ✅ |
 | L13 | Method param üzerinde annotation | `[Range(1,100)] int size` | param constraint uygulanır | ✅ |
 | L14 | `[Length(min,max)]` (.NET8) koleksiyon | minItems/maxItems | ✅ |
-| L15 | `[Length(min,max)]` (.NET8) **string** | `[Length(3,10)] string` | minLength/maxLength olmalı; kod **minItems/maxItems** (tip ayrımı yok) | ⚠️ |
+| L15 | `[Length(min,max)]` (.NET8) **string** (`[Length(3,10)] string`) | hedef tip string → minLength/maxLength (tip ayrımı yapılır) | ✅ |
 | L16 | `[AllowedValues]`/`[DeniedValues]` (.NET8) | enum'a çevrilebilir; **hiç işlenmiyor** | ✗ |
 | L17 | `[DefaultValue(...)]` | `Schema.DefaultValue` alanı + emitter hazır ama analyzer **doldurmuyor** | ✗ |
 | L18 | `[ReadOnly(true)]` | `readOnly` alanı IR'de yok → işlenmez | ✗ |
@@ -364,14 +364,14 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | M7 | `[Authorize(Roles=…)]` / Policy | Roles **yoksayılır**; Policy yalnız id'ye eklenip dedup'a girer, scope/role emit edilmez | ⚠️ |
 | M8 | `[Authorize(AuthenticationSchemes=…)]` | scheme adına göre tip eşlenir | ✅ |
 | M9 | API key auth | apiKey scheme; ama header adı kurtarılamaz → sabit; query API key yok | ⚠️ |
-| M10 | OAuth2 / OpenIdConnect | tip emit edilir **ama `flows`/`openIdConnectUrl` YOK** → 3.1 açısından geçersiz scheme | ⚠️ |
+| M10 | OAuth2 / OpenIdConnect | tip emit edilir; generator artık oauth2'ye `flows: {}`, oidc'ye placeholder `openIdConnectUrl` ekler → 3.1-geçerli scheme | ✅ (iyileştirildi) |
 | M12 | Çoklu auth şeması aynı specte | id başına ayrı scheme, dedup | ✅ |
 | M13 | Bearer dedup (aynı scheme) | tek `bearerAuth` | ✅ |
 | M14 | Basic auth (`AuthenticationSchemes="Basic"`) | http/basic, id=`basicAuth` | ✅ |
 | M15 | Cookie auth (`="Cookies"`) | Cookie case yok → default'a düşer, **yanlışlıkla bearer** | ✗ |
 | M16 | Tek attribute'te çoklu scheme | `="Bearer,Cookie"` | yalnız **ilk** scheme kullanılır, ikincisi düşer | ⚠️ |
 | M17 | `[RequireHttps]` | hiç okunmaz; server/scheme etkisi yok | ✗ |
-| M19 | oauth2/oidc scheme **geçerliliği** | zorunlu `flows`/`openIdConnectUrl` eksik → validator hata verir | ✗ (kritik) |
+| M19 | oauth2/oidc scheme **geçerliliği** | generator oauth2→`flows: {}`, oidc→placeholder `openIdConnectUrl` emit eder → validator'dan geçer (generator-only, IR'ye dokunulmadı) | ✅ (giderildi) |
 | M20 | `[Authorize(Policy=…)]` + açık scheme | Policy id'ye eklenmez → policy ayrımı kaybolur | ✗ |
 | M21 | Global vs per-operation security | yalnız operation seviyesinde; belge kökü `security` yok | ⚠️ (tasarım notu) |
 
@@ -452,11 +452,11 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | ID | Senaryo | Beklenen | Durum |
 | --- | --- | --- | --- |
 | R1 | `.sln` her csproj analiz | her C# projesi için ayrı walker, birleştirilir; C#-dışı atlanır | ⚠️ |
-| R2 | DTO bir kez hoisted (paylaşımlı) | tek `SchemaContext`; **AMA** dedup `SymbolEqualityComparer` → farklı derlemelerdeki aynı tip **farklı symbol** → dedup ıskalar → **duplike/namespace-qualified ikinci kopya** | ⚠️ |
+| R2 | DTO bir kez hoisted (paylaşımlı) | tek `SchemaContext`; dedup anahtarı artık **symbol değil yapısal FQN** (`StructuralKey` = `FullyQualifiedFormat`) → farklı derlemelerdeki aynı tip aynı anahtar → **bir kez hoist**, duplike kopya yok | ✅ |
 | R3 | İki projede aynı isimli farklı DTO | namespace-qualify ile ayrışır (R2 kök-nedeni ile karışabilir) | ⚠️ |
 | R4 | Web olmayan class lib | derlenir, controller yoksa 0 route; DTO'ları bir controller kullanırsa şemaya girer | ✅ |
 | R5 | `.slnx` yeni format | `XDocument` ile parse; bozuk .slnx → dizin taramasına düşüş | ✅ |
-| R6 | Projeler arası tip referansı | metadata referans → symbol çözülür (R2 dedup sınırı geçerli) | ⚠️ |
+| R6 | Projeler arası tip referansı | metadata referans → symbol çözülür; yapısal FQN dedup anahtarı derleme sınırını aşar (R2 fix), tek şema | ✅ |
 | R7 | `.sln` açılamadı / boş solution | `OpenSolutionAsync` exception → W003 + csproj taraması; solution asla hard-fail değil | ✅ |
 | R8 | Dairesel proje referansı | MSBuild grafiği kurar; şema döngüsü placeholder ile kırılır | ⚠️ |
 
@@ -479,7 +479,7 @@ Her canlı testte çıktı üzerinde otomatik kontrol edilmesi gerekenler:
 - [ ] Bir operasyonda `{in,name}` bazında **duplicate parametre yok**.
 - [ ] Her `$ref` `components/schemas` altında **çözümleniyor** (dangling ref yok).
 - [ ] Path template'deki her `{param}` için bir path parametresi **var** (ve tersi).
-- [ ] `securitySchemes`'e referans veren her `security` **tanımlı** (ve oauth2/oidc şemaları `flows`/`openIdConnectUrl` taşıyor — bkz. M19).
+- [ ] `securitySchemes`'e referans veren her `security` **tanımlı** (ve oauth2 şemaları `flows`, oidc şemaları `openIdConnectUrl` taşıyor — generator bunu garanti eder; bkz. M19).
 - [ ] Nullable, 3.1 tarzı (`type: [..., "null"]`) emit ediliyor.
 - [ ] Boş/`null` şema üretilmiyor (her schema geçerli bir kind taşıyor).
 
@@ -551,9 +551,10 @@ derinleşmesinin sonraki increment adayları bunlardır.
 
 ### Test-boşluğu notu
 
-Data-annotation **constraint değerlerini** (minLength/maxLength/pattern/format) assert
-eden **hiçbir birim test yok** (yalnız fixture var, assertion yok). L2–L11 "✅"
-durumları kod-yolu + emit boru hattına dayanıyor, regresyon testine değil.
+Data-annotation **constraint değerleri** (required/minLength/maxLength/min/max/pattern/
+format + koleksiyon-vs-string ayrımı L3b/L15) artık `DataAnnotationConstraintTests.cs`
+ile assert ediliyor. Kalan L-satırları (`[Length]` koleksiyon L14, format map'leri vb.)
+hâlâ kod-yolu + emit boru hattına dayanıyor.
 
 ---
 

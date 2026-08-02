@@ -131,6 +131,12 @@ public sealed class ControllerWalker
 
             var methodObsolete = controllerObsolete || AttributeReader.HasAttribute(method, "Obsolete");
 
+            // [MapToApiVersion("x")] on the action pins it to a subset of the
+            // controller's declared versions. When present, the action fans out
+            // only to those versions (intersected with what the controller
+            // actually declares) instead of every controller version.
+            var actionVersions = ResolveActionVersions(method, apiVersions);
+
             foreach (var (verb, methodRouteTemplate) in CollectVerbRoutes(method))
             {
                 var combined = CombineRoutes(classRoute, methodRouteTemplate);
@@ -139,7 +145,7 @@ public sealed class ControllerWalker
                 // A {version:apiVersion} token combined with declared
                 // [ApiVersion] values fans one action out into a concrete route
                 // per version; otherwise this yields the single template as-is.
-                foreach (var template in ExpandApiVersions(withPlaceholders, apiVersions))
+                foreach (var template in ExpandApiVersions(withPlaceholders, actionVersions))
                 {
                     var parsed = RouteTemplateParser.Parse(template);
 
@@ -272,6 +278,27 @@ public sealed class ControllerWalker
             if (!string.IsNullOrEmpty(version)) versions.Add(version!);
         }
         return versions;
+    }
+
+    // The effective versions an action fans out to. Without [MapToApiVersion]
+    // this is the controller's full version set (unchanged behavior). With one
+    // or more [MapToApiVersion("x")], the action is restricted to exactly those
+    // mapped versions, preserving the controller's declaration order and keeping
+    // only versions the controller actually declares (a mapped version outside
+    // the controller set does not invent a route).
+    private static List<string> ResolveActionVersions(
+        IMethodSymbol method, List<string> controllerVersions)
+    {
+        var mapped = new List<string>();
+        foreach (var attr in AttributeReader.FindAttributes(method, "MapToApiVersion"))
+        {
+            var version = AttributeReader.GetStringArg(attr, 0);
+            if (!string.IsNullOrEmpty(version)) mapped.Add(version!);
+        }
+
+        if (mapped.Count == 0) return controllerVersions;
+
+        return controllerVersions.Where(mapped.Contains).ToList();
     }
 
     // When the template contains an apiVersion token AND versions are declared,
