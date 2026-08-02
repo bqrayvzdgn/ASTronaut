@@ -129,7 +129,26 @@ export interface SecuritySchemeObject {
   in?: "query" | "header" | "cookie";
   scheme?: string;
   bearerFormat?: string;
+  flows?: OAuthFlowsObject;
   openIdConnectUrl?: string;
+}
+
+// Per OpenAPI 3.1 an oauth2 scheme MUST carry a `flows` object. Each individual
+// flow (implicit/password/clientCredentials/authorizationCode) is optional, so an
+// empty `{}` is spec-valid — which is all we can honestly emit, since the concrete
+// flow URLs live in Program.cs config and aren't statically recoverable.
+export interface OAuthFlowsObject {
+  implicit?: OAuthFlowObject;
+  password?: OAuthFlowObject;
+  clientCredentials?: OAuthFlowObject;
+  authorizationCode?: OAuthFlowObject;
+}
+
+export interface OAuthFlowObject {
+  authorizationUrl?: string;
+  tokenUrl?: string;
+  refreshUrl?: string;
+  scopes: Record<string, string>;
 }
 
 export type SecurityRequirementObject = Record<string, string[]>;

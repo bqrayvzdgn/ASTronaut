@@ -18,6 +18,11 @@ public class ApiVersionRoutingTests
             {
                 public ApiVersionAttribute(string v) { }
             }
+
+            public class MapToApiVersionAttribute : System.Attribute
+            {
+                public MapToApiVersionAttribute(string v) { }
+            }
         }
         """;
 
@@ -78,6 +83,66 @@ public class ApiVersionRoutingTests
             Assert.Equal("id", id.Name);
             Assert.Equal("integer", id.Schema.PrimitiveType);
         }
+    }
+
+    [Fact]
+    public void MapToApiVersion_RestrictsActionToSingleVersion()
+    {
+        // The controller declares two versions, but this action is pinned to
+        // "2.0" via [MapToApiVersion]. The action must fan out to ONLY the /v2.0
+        // route — the /v1.0 route it does not answer must not be invented.
+        var result = TestCompilation.Walk($$"""
+            using Microsoft.AspNetCore.Mvc;
+            namespace Demo;
+
+            {{AspVersioningStub}}
+
+            [ApiController]
+            [Asp.Versioning.ApiVersion("1.0")]
+            [Asp.Versioning.ApiVersion("2.0")]
+            [Route("api/v{version:apiVersion}/[controller]")]
+            public class OrdersController : ControllerBase
+            {
+                [HttpGet("{id}")]
+                [Asp.Versioning.MapToApiVersion("2.0")]
+                public IActionResult Get(int id) => Ok();
+            }
+            """);
+
+        var route = Assert.Single(result.Routes);
+        Assert.Equal("/api/v2.0/Orders/{id}", route.Path);
+    }
+
+    [Fact]
+    public void MapToApiVersion_MultipleVersions_FanOutToThoseOnly()
+    {
+        // The controller declares three versions; the action is mapped to two of
+        // them. It must fan out to exactly those two, in declaration order, and
+        // not to the third (unmapped) version.
+        var result = TestCompilation.Walk($$"""
+            using Microsoft.AspNetCore.Mvc;
+            namespace Demo;
+
+            {{AspVersioningStub}}
+
+            [ApiController]
+            [Asp.Versioning.ApiVersion("1.0")]
+            [Asp.Versioning.ApiVersion("2.0")]
+            [Asp.Versioning.ApiVersion("3.0")]
+            [Route("api/v{version:apiVersion}/[controller]")]
+            public class OrdersController : ControllerBase
+            {
+                [HttpGet("{id}")]
+                [Asp.Versioning.MapToApiVersion("1.0")]
+                [Asp.Versioning.MapToApiVersion("3.0")]
+                public IActionResult Get(int id) => Ok();
+            }
+            """);
+
+        Assert.Equal(2, result.Routes.Count);
+        Assert.Contains(result.Routes, r => r.Path == "/api/v1.0/Orders/{id}");
+        Assert.Contains(result.Routes, r => r.Path == "/api/v3.0/Orders/{id}");
+        Assert.DoesNotContain(result.Routes, r => r.Path == "/api/v2.0/Orders/{id}");
     }
 
     [Fact]
