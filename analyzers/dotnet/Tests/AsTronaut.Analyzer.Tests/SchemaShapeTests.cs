@@ -62,6 +62,58 @@ public class SchemaShapeTests
     }
 
     [Fact]
+    public void StructDto_BecomesObjectWithProperties()
+    {
+        var result = TestCompilation.Walk("""
+            using Microsoft.AspNetCore.Mvc;
+            namespace Demo;
+
+            [ApiController]
+            [Route("points")]
+            public class PointsController : ControllerBase
+            {
+                [HttpPost]
+                public Point Create([FromBody] Point p) => p;
+            }
+
+            public struct Point { public int X { get; set; } public int Y { get; set; } }
+            """);
+
+        // A user-defined struct DTO must hoist as an OBJECT with its properties,
+        // exactly like a class — not collapse to an empty {} fallback.
+        Assert.True(result.SharedSchemas.TryGetValue("Point", out var schema));
+        Assert.Equal("OBJECT", schema!.Kind);
+        var keys = result.SchemaPropertyKeys("Point");
+        Assert.Contains("x", keys);
+        Assert.Contains("y", keys);
+    }
+
+    [Fact]
+    public void RecordStructDto_BecomesObjectWithProperties()
+    {
+        var result = TestCompilation.Walk("""
+            using Microsoft.AspNetCore.Mvc;
+            namespace Demo;
+
+            [ApiController]
+            [Route("money")]
+            public class MoneyController : ControllerBase
+            {
+                [HttpPost]
+                public Money Create([FromBody] Money m) => m;
+            }
+
+            public readonly record struct Money(decimal Amount, string Currency);
+            """);
+
+        Assert.True(result.SharedSchemas.TryGetValue("Money", out var schema));
+        Assert.Equal("OBJECT", schema!.Kind);
+        var keys = result.SchemaPropertyKeys("Money");
+        Assert.Contains("amount", keys);
+        Assert.Contains("currency", keys);
+    }
+
+    [Fact]
     public void IFormFile_MapsToBinary_WithMultipartContentType()
     {
         var result = TestCompilation.Walk("""

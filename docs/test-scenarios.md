@@ -251,7 +251,7 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | --- | --- | --- | --- | --- |
 | I1 | `class` DTO → components/schemas + $ref | | dedup, $ref | ✅ |
 | I2 | `record` / positional record | `record User(long Id,string Name)` | sentezlenen init-props → OBJECT | ✅ |
-| I3 | `struct` / `record struct` DTO | `record struct Money(...)` | `TypeKind.Class` şartı struct'ı ele almaz → **boş `{}` OBJECT, property'ler düşer** | ⚠️ |
+| I3 | `struct` / `record struct` DTO | `record struct Money(...)` | class VE struct (record struct dâhil) property'leri okunup hoist edilir → OBJECT + $ref | ✅ |
 | I4 | Nullable `string?` / `Nullable<T>` | | nullable:true | ✅ |
 | I5 | `required` / init member | `required string X` | required listesi | ✅ |
 | I6 | Nested DTO (DTO içinde DTO) | | iç $ref | ✅ |
@@ -279,7 +279,7 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | I26 | Field (plain, JsonInclude yok) | | hariç | ✅ |
 | I27 | Aynı ad, farklı namespace | `A.Order` / `B.Order` | ikincisi namespace segmentiyle qualify edilir (deterministik) | ✅ |
 | I28 | Çok derin nesting (10+) | | çökme yok (her tip bir kez hoist) | ✅ |
-| I29 | **Global `JsonNamingPolicy`** (snake_case / PascalCase / null) | `PropertyNamingPolicy = SnakeCaseLower` | property adları politikaya göre olmalı; kod **her zaman camelCase** → yanlış wire adları | ⚠️ |
+| I29 | **Global `JsonNamingPolicy`** (snake_case / PascalCase / null) | `PropertyNamingPolicy = SnakeCaseLower` | semantik tarama politikayı tespit eder; property adları ona göre (Snake/Kebab Lower/Upper, `null`=as-is), yoksa camelCase; per-property override her zaman öncelikli | ✅ |
 | I30 | `byte[]` → base64 | `byte[] Data` | string + format `byte` | ✅ |
 | I31 | `decimal` format | `decimal Price` | number + format **`decimal`** (OpenAPI-standart değil; tooling sorunu) | ⚠️ |
 | I32 | `char` | `char Grade` | string (`maxLength:1` **yok**) | ⚠️ |

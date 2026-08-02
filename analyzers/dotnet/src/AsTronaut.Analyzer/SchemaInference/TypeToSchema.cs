@@ -11,11 +11,16 @@ public sealed class TypeToSchema
 {
     private readonly SchemaContext _ctx;
     private readonly bool _stringEnumsByDefault;
+    private readonly JsonNamingPolicyKind? _namingPolicy;
 
-    public TypeToSchema(SchemaContext ctx, bool stringEnumsByDefault = false)
+    public TypeToSchema(
+        SchemaContext ctx,
+        bool stringEnumsByDefault = false,
+        JsonNamingPolicyKind? namingPolicy = null)
     {
         _ctx = ctx;
         _stringEnumsByDefault = stringEnumsByDefault;
+        _namingPolicy = namingPolicy;
     }
 
     public Schema Map(ITypeSymbol type)
@@ -166,9 +171,14 @@ public sealed class TypeToSchema
             }
         }
 
-        // Custom class → hoist to SharedSchemas and return REFERENCE. A class
-        // marked [JsonPolymorphic] hoists as a discriminated ONE_OF instead.
-        if (type is INamedTypeSymbol named && named.TypeKind == TypeKind.Class)
+        // Custom class or struct → hoist to SharedSchemas and return REFERENCE. A
+        // type marked [JsonPolymorphic] hoists as a discriminated ONE_OF instead.
+        // Structs and record structs are user-defined value-object DTOs whose
+        // public properties must be walked exactly like a class; the well-known
+        // value types (Guid, DateTime, TimeSpan, …) never reach here because they
+        // are resolved earlier by SpecialType / the fully-qualified-name switch.
+        if (type is INamedTypeSymbol named
+            && named.TypeKind is TypeKind.Class or TypeKind.Struct)
         {
             // Anonymous types (e.g. return Ok(new { count })) have no useful name
             // to hoist under → emit inline.
@@ -177,7 +187,7 @@ public sealed class TypeToSchema
                 ? _ctx.GetOrCreateReference(named, () => BuildPolymorphicSchema(named))
                 : _ctx.GetOrCreateReference(named, () => BuildClassSchema(named));
         }
-        // Interface / struct fallback → empty OBJECT (caller decides).
+        // Interface (and any other unhandled kind) fallback → empty OBJECT.
         return new Schema { Kind = "OBJECT" };
     }
 
@@ -448,9 +458,11 @@ public sealed class TypeToSchema
     }
 
     // Resolves the serialized property name, honoring explicit serialization
-    // attributes so the emitted schema matches the real wire format. Falls back
-    // to ASP.NET Core's System.Text.Json default camelCase policy.
-    private static string ResolvePropertyName(ISymbol member)
+    // attributes so the emitted schema matches the real wire format. A
+    // per-property [JsonPropertyName]/[JsonProperty] override ALWAYS wins; absent
+    // that, the global naming policy applies (defaulting to ASP.NET Core's
+    // camelCase when no policy was detected).
+    private string ResolvePropertyName(ISymbol member)
     {
         // System.Text.Json: [JsonPropertyName("...")].
         var jpn = AttributeReader.FindAttribute(member, "JsonPropertyName");
@@ -469,7 +481,47 @@ public sealed class TypeToSchema
             if (!string.IsNullOrEmpty(np)) return np!;
         }
 
-        return ToCamelCase(member.Name);
+        return ApplyNamingPolicy(member.Name);
+    }
+
+    // Applies the detected global naming policy to a CLR member name. No detected
+    // policy and an explicit CamelCase policy both yield camelCase (the default),
+    // so unconfigured compilations behave exactly as before.
+    private string ApplyNamingPolicy(string name) => _namingPolicy switch
+    {
+        JsonNamingPolicyKind.AsIs => name,
+        JsonNamingPolicyKind.SnakeCaseLower => ConvertCase(name, '_', upper: false),
+        JsonNamingPolicyKind.SnakeCaseUpper => ConvertCase(name, '_', upper: true),
+        JsonNamingPolicyKind.KebabCaseLower => ConvertCase(name, '-', upper: false),
+        JsonNamingPolicyKind.KebabCaseUpper => ConvertCase(name, '-', upper: true),
+        _ => ToCamelCase(name), // null (undetected) or CamelCase
+    };
+
+    // Converts a PascalCase/camelCase identifier to a separator-delimited form,
+    // inserting the separator at word boundaries (a lowercase/digit→uppercase
+    // transition, or the last uppercase of a run before a lowercase letter):
+    // "UserId" → "user_id", "HTMLParser" → "html_parser", "IOStream" → "io_stream".
+    private static string ConvertCase(string name, char separator, bool upper)
+    {
+        if (string.IsNullOrEmpty(name)) return name;
+        var sb = new System.Text.StringBuilder(name.Length + 4);
+        for (var i = 0; i < name.Length; i++)
+        {
+            var c = name[i];
+            if (char.IsUpper(c) && i > 0)
+            {
+                var prev = name[i - 1];
+                var prevBoundary = char.IsLower(prev) || char.IsDigit(prev);
+                var nextLower = i + 1 < name.Length && char.IsLower(name[i + 1]);
+                if ((prevBoundary || nextLower)
+                    && sb.Length > 0 && sb[sb.Length - 1] != separator)
+                {
+                    sb.Append(separator);
+                }
+            }
+            sb.Append(upper ? char.ToUpperInvariant(c) : char.ToLowerInvariant(c));
+        }
+        return sb.ToString();
     }
 
     // True when the property is dropped from serialization entirely. Only an
