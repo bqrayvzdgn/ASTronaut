@@ -417,11 +417,14 @@ public sealed class ControllerWalker
             routeInfo = routeInfo with { RequestBody = body };
         }
 
-        // Prefer [ProducesResponseType] declarations when present; otherwise
-        // fall back to inferring response(s) from the return type and verb.
+        // [ProducesResponseType] declares which statuses an action produces, and
+        // takes precedence over inference. But a status can be declared without a
+        // schema (`[ProducesResponseType(200)]`), in which case the body / return
+        // type may still know the payload for that status — so we complete the
+        // schema-less declarations rather than dropping the body evidence.
         var declaredResponses = ResponseTypeReader.Read(method, typeMapper);
         var responses = declaredResponses.Count > 0
-            ? declaredResponses
+            ? CompleteDeclaredSchemas(declaredResponses, method, typeMapper, verb)
             // For IActionResult/ActionResult actions, recover responses from the
             // body's return statements before falling back to the return type.
             : ControllerResultReader.TryRead(method, _compilation, typeMapper)
@@ -455,6 +458,40 @@ public sealed class ControllerWalker
         if (auth is not null) routeInfo = routeInfo with { Auth = auth };
 
         return routeInfo;
+    }
+
+    // Fills in the schema for any [ProducesResponseType] status that was declared
+    // without one, using the schema the body's return statements (or, failing
+    // that, the return type) provide for the same status. A schema the attribute
+    // stated explicitly (typeof/generic) is authoritative and is never replaced;
+    // statuses the attribute declared but the body says nothing about are kept
+    // as-is. Extra statuses seen only in the body are NOT added — the attribute
+    // list remains the source of truth for which statuses exist.
+    private List<ResponseInfo> CompleteDeclaredSchemas(
+        List<ResponseInfo> declared, IMethodSymbol method, TypeToSchema mapper, string verb)
+    {
+        // Nothing to complete when every declared status already carries a schema.
+        if (declared.All(r => r.Schema is not null)) return declared;
+
+        // Recover schema-bearing responses the same way the no-attribute path
+        // would: body return statements first, then return-type inference.
+        var inferred = ControllerResultReader.TryRead(method, _compilation, mapper)
+                       ?? BuildResponses(method, mapper, verb);
+
+        // Index the first schema-bearing candidate per status.
+        var schemaByStatus = new Dictionary<int, ResponseInfo>();
+        foreach (var r in inferred)
+        {
+            if (r.Schema is null) continue;
+            if (!schemaByStatus.ContainsKey(r.Status)) schemaByStatus[r.Status] = r;
+        }
+        if (schemaByStatus.Count == 0) return declared;
+
+        return declared
+            .Select(r => r.Schema is null && schemaByStatus.TryGetValue(r.Status, out var src)
+                ? r with { Schema = src.Schema, ContentType = src.ContentType ?? "application/json" }
+                : r)
+            .ToList();
     }
 
     private static void UpsertPathParam(List<ParamInfo> pathParams, ParamInfo incoming)
