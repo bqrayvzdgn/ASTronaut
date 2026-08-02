@@ -8,13 +8,13 @@ namespace AsTronaut.Analyzer.SchemaInference;
 //
 // Supported annotations:
 //   [Required]                        → property is required (handled by caller)
-//   [StringLength(N)]                 → maxLength = N
+//   [StringLength(N)]                 → maxLength = N  (string only)
 //   [StringLength(N, MinimumLength=M)]→ maxLength = N, minLength = M
-//   [MinLength(N)]                    → minLength = N
-//   [MaxLength(N)]                    → maxLength = N
+//   [MinLength(N)]                    → minLength/minItems (by target type)
+//   [MaxLength(N)]                    → maxLength/maxItems (by target type)
 //   [Range(min, max)]                 → minimum/maximum
 //   [Range(.., MinimumIsExclusive=true)] → exclusiveMinimum/exclusiveMaximum
-//   [Length(min, max)]                → minItems/maxItems (collection length)
+//   [Length(min, max)]                → min/maxLength or min/maxItems (by type)
 //   [RegularExpression(pattern)]      → pattern
 //   [EmailAddress]                    → format = "email"
 //   [Url]                             → format = "uri"
@@ -51,6 +51,12 @@ public static class DataAnnotationReader
         var touched = current.Constraints is not null;
         string? formatOverride = current.Format;
 
+        // MinLength/MaxLength/Length are dual-purpose in .NET: on a string they
+        // constrain character count, on a collection they constrain item count.
+        // The mapped schema already tells us which — arrays map to ARRAY, strings
+        // (and byte[]) to a PRIMITIVE — so key the emitted constraint off Kind.
+        var isCollection = string.Equals(current.Kind, "ARRAY", StringComparison.Ordinal);
+
         foreach (var attr in attributes)
         {
             var name = AttrName(attr);
@@ -72,14 +78,16 @@ public static class DataAnnotationReader
                 case "MinLength":
                     if (TryGetInt(attr.ConstructorArguments, 0, out var mn))
                     {
-                        constraints.MinLength = mn;
+                        if (isCollection) constraints.MinItems = mn;
+                        else constraints.MinLength = mn;
                         touched = true;
                     }
                     break;
                 case "MaxLength":
                     if (TryGetInt(attr.ConstructorArguments, 0, out var mx))
                     {
-                        constraints.MaxLength = mx;
+                        if (isCollection) constraints.MaxItems = mx;
+                        else constraints.MaxLength = mx;
                         touched = true;
                     }
                     break;
@@ -103,15 +111,19 @@ public static class DataAnnotationReader
                     break;
                 case "Length":
                     // System.ComponentModel.DataAnnotations.LengthAttribute(min, max)
-                    // constrains collection/string length → minItems/maxItems.
+                    // constrains string length OR collection item count depending on
+                    // the target type → min/maxLength for strings, min/maxItems for
+                    // collections.
                     if (TryGetInt(attr.ConstructorArguments, 0, out var lmin))
                     {
-                        constraints.MinItems = lmin;
+                        if (isCollection) constraints.MinItems = lmin;
+                        else constraints.MinLength = lmin;
                         touched = true;
                     }
                     if (TryGetInt(attr.ConstructorArguments, 1, out var lmax))
                     {
-                        constraints.MaxItems = lmax;
+                        if (isCollection) constraints.MaxItems = lmax;
+                        else constraints.MaxLength = lmax;
                         touched = true;
                     }
                     break;
