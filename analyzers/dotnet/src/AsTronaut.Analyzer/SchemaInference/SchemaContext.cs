@@ -11,8 +11,14 @@ public sealed class SchemaContext
 {
     public Dictionary<string, Schema> SharedSchemas { get; } = new();
 
-    private readonly Dictionary<INamedTypeSymbol, string> _registered =
-        new(SymbolEqualityComparer.Default);
+    // Dedup key is the type's STRUCTURAL identity (see StructuralKey), not its
+    // symbol. Symbol identity (SymbolEqualityComparer) is per-compilation, so in a
+    // multi-project `.sln` the same DTO reached through a metadata reference is a
+    // different symbol than the project that owns its source — symbol-keyed dedup
+    // misses and AllocateName's collision path emits a duplicated, namespace-
+    // qualified second copy. A fully-qualified-name key is stable across
+    // compilations, so the DTO is hoisted exactly once. (R2/R6)
+    private readonly Dictionary<string, string> _registered = new(StringComparer.Ordinal);
 
     // Returns a REFERENCE schema, lazily building the target schema via `build`
     // the first time the type is seen. Cycles are safe: a placeholder is stored
@@ -20,16 +26,27 @@ public sealed class SchemaContext
     // a reference instead of recursing forever.
     public Schema GetOrCreateReference(INamedTypeSymbol type, Func<Schema> build)
     {
-        if (_registered.TryGetValue(type, out var existing))
+        var key = StructuralKey(type);
+        if (_registered.TryGetValue(key, out var existing))
         {
             return new Schema { Kind = "REFERENCE", RefName = existing };
         }
         var name = AllocateName(type);
-        _registered[type] = name;
+        _registered[key] = name;
         SharedSchemas[name] = new Schema { Kind = "OBJECT" }; // placeholder
         SharedSchemas[name] = build();
         return new Schema { Kind = "REFERENCE", RefName = name };
     }
+
+    // Structural dedup key: the fully-qualified name including namespace and, for
+    // constructed generics, the type arguments (e.g. `global::Demo.Order`,
+    // `global::Demo.Page<global::Demo.Item>`). Because it carries the namespace,
+    // two genuinely different types that share a simple name (`Ordering.Order` vs
+    // `Shipping.Order`) still get distinct keys and stay separate schemas, while
+    // the SAME closed generic used twice collapses to one. This string is stable
+    // across compilations, unlike symbol identity.
+    private static string StructuralKey(INamedTypeSymbol type) =>
+        type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
     // A type's simple name is used verbatim when it is unique. On a collision with
     // a DIFFERENT already-registered type, we qualify the newcomer with namespace

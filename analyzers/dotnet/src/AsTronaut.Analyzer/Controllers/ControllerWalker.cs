@@ -133,6 +133,12 @@ public sealed class ControllerWalker
 
             var methodObsolete = controllerObsolete || AttributeReader.HasAttribute(method, "Obsolete");
 
+            // [MapToApiVersion("x")] on the action pins it to a subset of the
+            // controller's declared versions. When present, the action fans out
+            // only to those versions (intersected with what the controller
+            // actually declares) instead of every controller version.
+            var actionVersions = ResolveActionVersions(method, apiVersions);
+
             foreach (var (verb, methodRouteTemplate) in CollectVerbRoutes(method))
             {
                 var combined = CombineRoutes(classRoute, methodRouteTemplate);
@@ -141,7 +147,7 @@ public sealed class ControllerWalker
                 // A {version:apiVersion} token combined with declared
                 // [ApiVersion] values fans one action out into a concrete route
                 // per version; otherwise this yields the single template as-is.
-                foreach (var template in ExpandApiVersions(withPlaceholders, apiVersions))
+                foreach (var template in ExpandApiVersions(withPlaceholders, actionVersions))
                 {
                     var parsed = RouteTemplateParser.Parse(template);
 
@@ -276,6 +282,27 @@ public sealed class ControllerWalker
         return versions;
     }
 
+    // The effective versions an action fans out to. Without [MapToApiVersion]
+    // this is the controller's full version set (unchanged behavior). With one
+    // or more [MapToApiVersion("x")], the action is restricted to exactly those
+    // mapped versions, preserving the controller's declaration order and keeping
+    // only versions the controller actually declares (a mapped version outside
+    // the controller set does not invent a route).
+    private static List<string> ResolveActionVersions(
+        IMethodSymbol method, List<string> controllerVersions)
+    {
+        var mapped = new List<string>();
+        foreach (var attr in AttributeReader.FindAttributes(method, "MapToApiVersion"))
+        {
+            var version = AttributeReader.GetStringArg(attr, 0);
+            if (!string.IsNullOrEmpty(version)) mapped.Add(version!);
+        }
+
+        if (mapped.Count == 0) return controllerVersions;
+
+        return controllerVersions.Where(mapped.Contains).ToList();
+    }
+
     // When the template contains an apiVersion token AND versions are declared,
     // yields one concrete template per version (token replaced by the literal
     // version). Otherwise yields the template unchanged — so unversioned
@@ -337,7 +364,7 @@ public sealed class ControllerWalker
             var schema = DataAnnotationReader.Apply(typeMapper.Map(p.Type), p);
             var paramInfo = new ParamInfo
             {
-                Name = p.Name,
+                Name = ResolveParamName(p),
                 Schema = schema,
                 // Required when the type/optionality says so, OR an explicit
                 // [Required] is present (which overrides a nullable annotation) —
@@ -357,6 +384,9 @@ public sealed class ControllerWalker
                     break;
                 case Binding.Query:
                     AddQueryParams(queryParams, p, paramInfo);
+                    break;
+                case Binding.AsParameters:
+                    AddAsParameters(pathParams, queryParams, paramInfo, pathParamNames);
                     break;
                 case Binding.Header:
                     headerParams.Add(paramInfo);
@@ -389,11 +419,14 @@ public sealed class ControllerWalker
             routeInfo = routeInfo with { RequestBody = body };
         }
 
-        // Prefer [ProducesResponseType] declarations when present; otherwise
-        // fall back to inferring response(s) from the return type and verb.
+        // [ProducesResponseType] declares which statuses an action produces, and
+        // takes precedence over inference. But a status can be declared without a
+        // schema (`[ProducesResponseType(200)]`), in which case the body / return
+        // type may still know the payload for that status — so we complete the
+        // schema-less declarations rather than dropping the body evidence.
         var declaredResponses = ResponseTypeReader.Read(method, typeMapper);
         var responses = declaredResponses.Count > 0
-            ? declaredResponses
+            ? CompleteDeclaredSchemas(declaredResponses, method, typeMapper, verb)
             // For IActionResult/ActionResult actions, recover responses from the
             // body's return statements before falling back to the return type.
             : ControllerResultReader.TryRead(method, _compilation, typeMapper)
@@ -429,6 +462,40 @@ public sealed class ControllerWalker
         return routeInfo;
     }
 
+    // Fills in the schema for any [ProducesResponseType] status that was declared
+    // without one, using the schema the body's return statements (or, failing
+    // that, the return type) provide for the same status. A schema the attribute
+    // stated explicitly (typeof/generic) is authoritative and is never replaced;
+    // statuses the attribute declared but the body says nothing about are kept
+    // as-is. Extra statuses seen only in the body are NOT added — the attribute
+    // list remains the source of truth for which statuses exist.
+    private List<ResponseInfo> CompleteDeclaredSchemas(
+        List<ResponseInfo> declared, IMethodSymbol method, TypeToSchema mapper, string verb)
+    {
+        // Nothing to complete when every declared status already carries a schema.
+        if (declared.All(r => r.Schema is not null)) return declared;
+
+        // Recover schema-bearing responses the same way the no-attribute path
+        // would: body return statements first, then return-type inference.
+        var inferred = ControllerResultReader.TryRead(method, _compilation, mapper)
+                       ?? BuildResponses(method, mapper, verb);
+
+        // Index the first schema-bearing candidate per status.
+        var schemaByStatus = new Dictionary<int, ResponseInfo>();
+        foreach (var r in inferred)
+        {
+            if (r.Schema is null) continue;
+            if (!schemaByStatus.ContainsKey(r.Status)) schemaByStatus[r.Status] = r;
+        }
+        if (schemaByStatus.Count == 0) return declared;
+
+        return declared
+            .Select(r => r.Schema is null && schemaByStatus.TryGetValue(r.Status, out var src)
+                ? r with { Schema = src.Schema, ContentType = src.ContentType ?? "application/json" }
+                : r)
+            .ToList();
+    }
+
     private static void UpsertPathParam(List<ParamInfo> pathParams, ParamInfo incoming)
     {
         for (int i = 0; i < pathParams.Count; i++)
@@ -450,10 +517,11 @@ public sealed class ControllerWalker
         pathParams.Add(incoming);
     }
 
-    private enum Binding { Path, Query, Header, Body, Service }
+    private enum Binding { Path, Query, Header, Body, Service, AsParameters }
 
     private static Binding ResolveBinding(IParameterSymbol parameter, HashSet<string> pathParamNames)
     {
+        if (AttributeReader.HasAttribute(parameter, "AsParameters")) return Binding.AsParameters;
         if (AttributeReader.HasAttribute(parameter, "FromBody")) return Binding.Body;
         if (AttributeReader.HasAttribute(parameter, "FromRoute")) return Binding.Path;
         if (AttributeReader.HasAttribute(parameter, "FromQuery")) return Binding.Query;
@@ -501,6 +569,61 @@ public sealed class ControllerWalker
                 Schema = kvp.Value,
                 Required = required.Contains(kvp.Key),
             });
+        }
+    }
+
+    // A [FromHeader]/[FromQuery]/[FromRoute] attribute may carry Name="..." to
+    // rename the bound parameter on the wire (e.g. a kebab-case header
+    // "X-Trace-Id" or a snake_case query "page_size"). Prefer that override; fall
+    // back to the C# parameter name when it is absent.
+    private static string ResolveParamName(IParameterSymbol p)
+    {
+        var attr = AttributeReader.FindAttribute(p, "FromHeader", "FromQuery", "FromRoute");
+        if (attr is not null)
+        {
+            var name = AttributeReader.GetNamedStringArg(attr, "Name");
+            if (!string.IsNullOrEmpty(name)) return name!;
+        }
+        return p.Name;
+    }
+
+    // [AsParameters] flattens the container type's public properties into their
+    // own parameters (ASP.NET model binding). Each property binds by its default
+    // source: a property whose name matches a route token becomes a path
+    // parameter, everything else a query parameter — so the container is never
+    // bound as a JSON body. Mirrors the complex-[FromQuery] flatten in
+    // AddQueryParams.
+    private void AddAsParameters(
+        List<ParamInfo> pathParams,
+        List<ParamInfo> queryParams,
+        ParamInfo paramInfo,
+        HashSet<string> pathParamNames)
+    {
+        var obj = ResolveObjectSchema(paramInfo.Schema);
+        if (obj?.Properties is null)
+        {
+            // No inspectable properties (opaque/free-form) — expose as a single
+            // query parameter rather than leaking a JSON body.
+            queryParams.Add(paramInfo);
+            return;
+        }
+        var required = obj.RequiredProperties ?? new List<string>();
+        foreach (var kvp in obj.Properties)
+        {
+            var flattened = new ParamInfo
+            {
+                Name = kvp.Key,
+                Schema = kvp.Value,
+                Required = required.Contains(kvp.Key),
+            };
+            if (pathParamNames.Contains(kvp.Key))
+            {
+                UpsertPathParam(pathParams, flattened);
+            }
+            else
+            {
+                queryParams.Add(flattened);
+            }
         }
     }
 

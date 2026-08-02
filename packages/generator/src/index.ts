@@ -6,6 +6,8 @@ export type {
   HeaderObject,
   InfoObject,
   MediaTypeObject,
+  OAuthFlowObject,
+  OAuthFlowsObject,
   OpenApiDocument,
   OperationObject,
   ParameterObject,
