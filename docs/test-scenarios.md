@@ -153,7 +153,7 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | --- | --- | --- | --- | --- |
 | E1 | `[FromRoute]` | | path param | ✅ |
 | E2 | `[FromQuery]` | | query param | ✅ |
-| E3 | `[FromHeader]` / `[FromQuery]` / `[FromRoute]` **`Name="..."` override** | `[FromHeader(Name="X-Trace-Id")]` | param adı = attribute `Name`; **kod her zaman C# adını (`p.Name`) kullanır → override yok sayılır** | ✗ |
+| E3 | `[FromHeader]` / `[FromQuery]` / `[FromRoute]` **`Name="..."` override** | `[FromHeader(Name="X-Trace-Id")]` | param adı = attribute `Name` (yoksa C# adı); named arg okunur → `X-Trace-Id`/`page_size` doğru çıkar | ✅ |
 | E4 | `[FromBody]` | | request body | ✅ |
 | E5 | `[FromForm]` / `IFormFile` | | multipart/form-data + binary | ⚠️ |
 | E6 | Attribute'suz basit param → query | `int page = 1` | query param | ✅ |
@@ -162,7 +162,7 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | E8 | Nullable param `string? q` | | required=false | ✅ |
 | E9 | Default değerli param `int size = 20` | | required=false | ✅ |
 | E11b | **Concrete class** service (`AppDbContext`) | ctor DI, attribute yok | EF Core `DbContext` base-type tespiti → service, body'ye bağlanmaz | ✅ |
-| E12 | `[AsParameters]` struct/class binding | `[AsParameters] Query q` | her alan ayrı query param; **switch'te yok → tüm struct body'ye bağlanır (yanlış)** | ✗ |
+| E12 | `[AsParameters]` struct/class binding | `[AsParameters] Query q` | her public property ayrı param'a flatten; route-token eşleşen → path, kalan → query; body'ye bağlanmaz | ✅ |
 | E13 | `[FromKeyedServices]` | | atlanır | ✅ |
 | E14 | Array/list query `[FromQuery] int[] ids` | | array query param | ✅ |
 | E15 | Enum query param | `[FromQuery] Status s` | `IsSimpleType` enum'ı simple sayar (Nullable dahil) → query | ✅ |

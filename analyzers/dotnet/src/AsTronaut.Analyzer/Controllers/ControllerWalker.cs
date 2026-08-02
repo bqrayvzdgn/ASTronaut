@@ -335,7 +335,7 @@ public sealed class ControllerWalker
             var schema = DataAnnotationReader.Apply(typeMapper.Map(p.Type), p);
             var paramInfo = new ParamInfo
             {
-                Name = p.Name,
+                Name = ResolveParamName(p),
                 Schema = schema,
                 // Required when the type/optionality says so, OR an explicit
                 // [Required] is present (which overrides a nullable annotation) —
@@ -355,6 +355,9 @@ public sealed class ControllerWalker
                     break;
                 case Binding.Query:
                     AddQueryParams(queryParams, p, paramInfo);
+                    break;
+                case Binding.AsParameters:
+                    AddAsParameters(pathParams, queryParams, paramInfo, pathParamNames);
                     break;
                 case Binding.Header:
                     headerParams.Add(paramInfo);
@@ -448,10 +451,11 @@ public sealed class ControllerWalker
         pathParams.Add(incoming);
     }
 
-    private enum Binding { Path, Query, Header, Body, Service }
+    private enum Binding { Path, Query, Header, Body, Service, AsParameters }
 
     private static Binding ResolveBinding(IParameterSymbol parameter, HashSet<string> pathParamNames)
     {
+        if (AttributeReader.HasAttribute(parameter, "AsParameters")) return Binding.AsParameters;
         if (AttributeReader.HasAttribute(parameter, "FromBody")) return Binding.Body;
         if (AttributeReader.HasAttribute(parameter, "FromRoute")) return Binding.Path;
         if (AttributeReader.HasAttribute(parameter, "FromQuery")) return Binding.Query;
@@ -499,6 +503,61 @@ public sealed class ControllerWalker
                 Schema = kvp.Value,
                 Required = required.Contains(kvp.Key),
             });
+        }
+    }
+
+    // A [FromHeader]/[FromQuery]/[FromRoute] attribute may carry Name="..." to
+    // rename the bound parameter on the wire (e.g. a kebab-case header
+    // "X-Trace-Id" or a snake_case query "page_size"). Prefer that override; fall
+    // back to the C# parameter name when it is absent.
+    private static string ResolveParamName(IParameterSymbol p)
+    {
+        var attr = AttributeReader.FindAttribute(p, "FromHeader", "FromQuery", "FromRoute");
+        if (attr is not null)
+        {
+            var name = AttributeReader.GetNamedStringArg(attr, "Name");
+            if (!string.IsNullOrEmpty(name)) return name!;
+        }
+        return p.Name;
+    }
+
+    // [AsParameters] flattens the container type's public properties into their
+    // own parameters (ASP.NET model binding). Each property binds by its default
+    // source: a property whose name matches a route token becomes a path
+    // parameter, everything else a query parameter — so the container is never
+    // bound as a JSON body. Mirrors the complex-[FromQuery] flatten in
+    // AddQueryParams.
+    private void AddAsParameters(
+        List<ParamInfo> pathParams,
+        List<ParamInfo> queryParams,
+        ParamInfo paramInfo,
+        HashSet<string> pathParamNames)
+    {
+        var obj = ResolveObjectSchema(paramInfo.Schema);
+        if (obj?.Properties is null)
+        {
+            // No inspectable properties (opaque/free-form) — expose as a single
+            // query parameter rather than leaking a JSON body.
+            queryParams.Add(paramInfo);
+            return;
+        }
+        var required = obj.RequiredProperties ?? new List<string>();
+        foreach (var kvp in obj.Properties)
+        {
+            var flattened = new ParamInfo
+            {
+                Name = kvp.Key,
+                Schema = kvp.Value,
+                Required = required.Contains(kvp.Key),
+            };
+            if (pathParamNames.Contains(kvp.Key))
+            {
+                UpsertPathParam(pathParams, flattened);
+            }
+            else
+            {
+                queryParams.Add(flattened);
+            }
         }
     }
 
