@@ -112,7 +112,7 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | B29 | Header versiyonlama | `X-Api-Version: 1.0` | version header param; **hiç modellenmez** | ✗ |
 | B30 | Media-type versiyonlama | `Accept: ...;v=1.0` | content-type varyantı; **hiç modellenmez** | ✗ |
 | B31 | `[ApiVersionNeutral]` | | tüm versiyonlarda tek route; attribute okunmaz ama versiyonsuz zaten tek route → tesadüfen doğru | ⚠️ |
-| B32 | `[MapToApiVersion("2.0")]` action | | action'ı o versiyona kısıtlamalı; **yok sayılır → controller'ın TÜM versiyonlarına fan-out (yanlış route uydurur)** | ✗ |
+| B32 | `[MapToApiVersion("2.0")]` action | | action'ı o versiyon(lar)a kısıtlar; controller'ın diğer versiyonlarına fan-out edilmez (yanlış route uydurulmaz) | ✅ |
 | B33 | Deprecated versiyon `[ApiVersion("1.0",Deprecated=true)]` | | o versiyon `deprecated:true`; named arg okunmaz | ✗ |
 | B34 | Action düzeyinde `[ApiVersion]` (controller değil) | | yalnız controller'dan okunur → yok sayılır | ✗ |
 
