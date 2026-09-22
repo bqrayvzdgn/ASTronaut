@@ -7,6 +7,14 @@ namespace ControllersFeatures.Controllers;
 //   E12 [AsParameters] flatten · E3 Name overrides · E15/J2 enum query param ·
 //   G36 [ProducesResponseType] completed from the body · I3 record struct ·
 //   L3b/L15 [MaxLength] on a collection vs a string · I29 snake_case names.
+//
+// Known findings FROZEN in expected.openapi.yaml — recorded, not fixed here (see
+// fixtures/dotnet/README.md "Golden'larda dondurulmuş bilinen bulgular"):
+//   F1 the flattened query names carry the JSON naming policy (`page_size`), but
+//      MVC query binding matches the property name; F2 initialised properties
+//      (`Page = 1`) are emitted `required: true`; F3 `ProductQuery` is hoisted as
+//      an orphan schema; F5 [AsParameters] is a Minimal-API attribute that MVC
+//      ignores (an [ApiController] complex parameter is inferred [FromBody]).
 [ApiController]
 [Route("api/products")]
 public class ProductsController : ControllerBase

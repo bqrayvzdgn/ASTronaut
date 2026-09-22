@@ -36,6 +36,20 @@ CLI sözleşmesi (`apps/cli/test/cli.e2e.test.ts`) aynı fixture'ları gerçek `
 6. Çıktı üretmemesi gereken bir fixture'ı `apps/cli/test/pipeline.e2e.test.ts` içindeki
    `FAILURE_FIXTURES` setine ekle ve sözleşmesini `cli.e2e.test.ts`'e yaz.
 
+## Golden'larda dondurulmuş bilinen bulgular
+
+Golden'lar **mevcut** davranışı kaydeder. Aşağıdaki satırlar bilinerek şüpheli/yanlış olarak
+dondurulmuştur; bu işte düzeltilmedi (analyzer/generator düzeltmesi ayrı PR). Düzeltme
+geldiğinde golden diff'i PR'da görünür ve bu tablo güncellenir.
+
+| # | Yer | Bulgu |
+| --- | --- | --- |
+| F1 | `controllers-features` → `GET /api/products` parametreleri | `[AsParameters]` ile açılan query adlarına global JSON naming policy uygulanmış (`page_size`); MVC query binding property adını (büyük/küçük harf duyarsız) kullanır — üretilen istemci `page_size` gönderir, sunucu bağlamaz |
+| F2 | aynı | initializer'lı property'ler (`Page = 1`) `required: true` çıkıyor; E9'daki "default ⇒ opsiyonel" kuralı property'lere uygulanmıyor |
+| F3 | `components.schemas.ProductQuery` | flatten edilen tip, hiçbir yerden referans verilmediği halde hoist edilmiş (yetim şema) |
+| F4 | `/api/v1.0/Reports` (`Reports_List`) vs `/api/v2.0/Reports` (`List_2`) | versiyon fan-out'unda operationId dedup'ı tutarsız ad üretiyor (generator `uniqueOperationId`) |
+| F5 | `controllers-features` → `[AsParameters]` | Minimal API attribute'u; MVC bunu yok sayar ve `[ApiController]` complex parametreyi `[FromBody]` olarak çıkarır — controller'larda flatten davranışı (E12) yeniden değerlendirilmeli |
+
 ## Golden güncelleme
 
 Analyzer/generator davranışını bilerek değiştirdiysen:
