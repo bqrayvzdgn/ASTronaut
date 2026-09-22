@@ -69,6 +69,50 @@ public class DeterminismTests
         Assert.Equal(new[] { "/apple", "/zebra" }, paths);
     }
 
+    private const string ZedController = """
+        using Microsoft.AspNetCore.Mvc;
+        namespace Demo;
+
+        [ApiController]
+        [Route("zed")]
+        public class ZedController : ControllerBase
+        {
+            [HttpGet]
+            public IActionResult List() => Ok();
+        }
+        """;
+
+    private const string ClientController = """
+        using Microsoft.AspNetCore.Mvc;
+        namespace Demo;
+
+        [ApiController]
+        [Route("client")]
+        public class ClientController : ControllerBase
+        {
+            [HttpGet]
+            public IActionResult List() => Ok();
+        }
+        """;
+
+    [Fact]
+    public void Walk_DirectoryNameIsPrefixOfSiblingFile_OrdersLikeForwardSlashOnEveryOs()
+    {
+        // Arrange: "Api\Zed.cs" (a file inside a directory) next to "ApiClient.cs"
+        // (a sibling whose name extends the directory name). A raw Ordinal sort puts
+        // '\' (0x5C) after 'C' (0x43) on Windows but '/' (0x2F) before it on Linux,
+        // so the two OSes would disagree. The walker must normalise separators.
+        var result = TestCompilation.WalkFiles(
+            ("ApiClient.cs", ClientController),
+            ("Api\\Zed.cs", ZedController));
+
+        // Act
+        var paths = result.Routes.Select(r => r.Path).ToList();
+
+        // Assert: the '/' order wins everywhere — the directory entry sorts first.
+        Assert.Equal(new[] { "/zed", "/client" }, paths);
+    }
+
     [Fact]
     public void Walk_ControllersInOneFile_KeepsSourceOrder()
     {

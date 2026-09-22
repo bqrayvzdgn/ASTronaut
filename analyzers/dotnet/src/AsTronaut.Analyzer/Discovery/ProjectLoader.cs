@@ -106,11 +106,11 @@ public static class ProjectLoader
             {
                 var solution = await workspace.OpenSolutionAsync(path);
                 // Roslyn returns projects in solution-file order, which is whatever
-                // the author (or tooling) happened to write. Sort by path so route
-                // and schema order — and the "bare" name a colliding DTO wins — is
-                // the same on every machine.
+                // the author (or tooling) happened to write. Sort by the separator-
+                // normalised path (PathOrder) so route and schema order — and the
+                // "bare" name a colliding DTO wins — is the same on every machine.
                 return solution.Projects
-                    .OrderBy(p => p.FilePath ?? "", StringComparer.Ordinal)
+                    .OrderBy(p => PathOrder.Key(p.FilePath), StringComparer.Ordinal)
                     .ToList();
             }
             catch (Exception ex)
