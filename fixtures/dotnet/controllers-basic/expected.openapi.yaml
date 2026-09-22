@@ -1,0 +1,99 @@
+openapi: 3.1.0
+info:
+  title: ControllersBasic
+  version: 0.0.0
+paths:
+  /api/users:
+    get:
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+      tags:
+        - Users
+      operationId: List
+    post:
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+      tags:
+        - Users
+      operationId: Create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserDto"
+        required: true
+  /api/users/{id}:
+    get:
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+      tags:
+        - Users
+      operationId: Get
+      parameters:
+        - name: id
+          in: path
+          schema:
+            type: integer
+            format: int32
+          required: true
+    delete:
+      responses:
+        "204":
+          description: No content
+      tags:
+        - Users
+      operationId: Delete
+      parameters:
+        - name: id
+          in: path
+          schema:
+            type: integer
+            format: int32
+          required: true
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        email:
+          type: string
+        name:
+          type:
+            - string
+            - "null"
+      required:
+        - id
+        - email
+    CreateUserDto:
+      type: object
+      properties:
+        email:
+          type: string
+        age:
+          type: integer
+          format: int32
+      required:
+        - email
+        - age
+tags:
+  - name: Users

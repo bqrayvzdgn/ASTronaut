@@ -63,6 +63,30 @@ public static class TestCompilation
         return new WalkResult(routes, errors, schemaContext.SharedSchemas);
     }
 
+    // Multi-file variant: one syntax tree per (path, source) pair, added to the
+    // compilation in the order given. Lets tests prove the walker's output does
+    // not depend on the order MSBuild happens to hand over documents.
+    public static WalkResult WalkFiles(params (string Path, string Source)[] files)
+    {
+        var trees = files.Select(f => CSharpSyntaxTree.ParseText(
+            f.Source,
+            new CSharpParseOptions(LanguageVersion.Latest),
+            path: f.Path));
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "AsTronaut.Analyzer.TestInput",
+            syntaxTrees: trees,
+            references: References.Value,
+            options: new CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                nullableContextOptions: NullableContextOptions.Enable));
+
+        var schemaContext = new SchemaContext();
+        var walker = new ControllerWalker(compilation, "", schemaContext);
+        walker.Walk();
+        return new WalkResult(walker.Routes.ToList(), walker.Errors.ToList(), schemaContext.SharedSchemas);
+    }
+
     // Two-project scenario: `sharedSource` is compiled and EMITTED to a metadata
     // (PE) reference, which `consumerSource` then references — so a DTO the
     // consumer reaches through that reference is a DISTINCT metadata symbol from

@@ -64,11 +64,20 @@ pnpm test                     # vitest unit + snapshot suite (incl. the IR drift
 # .NET analyzer unit tests (in-memory Roslyn, no MSBuild):
 dotnet test analyzers/dotnet/Tests/AsTronaut.Analyzer.Tests
 
+# End-to-end: real fixture projects through the analyzer, checked against committed
+# goldens (fixtures/dotnet/*/expected.openapi.yaml), the OpenAPI 3.1 meta-schema and
+# the §T invariants; plus the CLI contract (exit codes, stdout/stderr, options).
+pnpm restore:fixtures         # once per checkout (scripts/restore-fixtures.ps1 on pure Windows)
+pnpm test:e2e
+pnpm test:e2e -u              # regenerate goldens after an intended output change — review the diff
+
 # Try it out against a checked-in fixture:
 node apps/cli/dist/bin.js analyze fixtures/dotnet/controllers-rich -o out.yaml
 ```
 
-CI (`.github/workflows/ci.yml`) runs lint + build + vitest and the .NET tests on every push and pull request.
+CI (`.github/workflows/ci.yml`) runs lint + build + vitest and the .NET tests on every push and
+pull request, and the end-to-end suite on both Ubuntu and Windows. See `fixtures/dotnet/README.md`
+for how fixtures and goldens work.
 
 ## Architecture
 
