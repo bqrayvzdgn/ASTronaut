@@ -21,7 +21,7 @@ import { GOLDEN_FILE, fixturesDir, goldenPath, normalizeEol, repoRoot } from "./
 
 // Fixtures that must NOT produce a document (the CLI exits non-zero). They are
 // covered by cli.e2e.test.ts and skipped here.
-const FAILURE_FIXTURES = new Set<string>([]);
+const FAILURE_FIXTURES = new Set<string>(["diagnostics-load-failure"]);
 
 // The analyzer must be built (`pnpm build:analyzers`). Skip cleanly otherwise so
 // the suite does not require a .NET toolchain just to load.
