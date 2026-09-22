@@ -9,5 +9,8 @@ export default defineConfig({
     include: ["apps/*/test/**/*.e2e.test.ts", "packages/*/test/**/*.e2e.test.ts"],
     testTimeout: 180_000,
     hookTimeout: 180_000,
+    // Both e2e files spawn the analyzer over the same fixture projects; MSBuild
+    // design-time builds may touch the same obj/ folders, so run files one at a time.
+    fileParallelism: false,
   },
 });
