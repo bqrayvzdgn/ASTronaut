@@ -43,8 +43,17 @@ jobs:
       - run: dotnet test analyzers/dotnet/Tests/AsTronaut.Analyzer.Tests/AsTronaut.Analyzer.Tests.csproj -c Release
 
   e2e:
-    name: End-to-end (analyzer → OpenAPI 3.1)
-    runs-on: ubuntu-latest
+    name: End-to-end (analyzer → OpenAPI 3.1, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      # Development happens on Windows, CI historically only on Linux; goldens
+      # must be byte-identical on both.
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -65,10 +74,6 @@ jobs:
 
       # Restore the fixture projects so MSBuildWorkspace can load them on a fresh
       # checkout (obj/ is gitignored).
-      - name: Restore fixture projects
-        run: |
-          for proj in fixtures/dotnet/*/*.csproj; do
-            [ -f "$proj" ] && dotnet restore "$proj"
-          done
+      - run: pnpm restore:fixtures
 
       - run: pnpm test:e2e

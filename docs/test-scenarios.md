@@ -30,7 +30,10 @@ Canlı testin dokunduğu her katman:
 ## Test seviyeleri
 
 1. **Unit** (`dotnet test analyzers/dotnet/Tests`) — in-memory Roslyn, MSBuild yok.
-2. **E2E fixture** (`pnpm test:e2e`) — checked-in fixture'lar: gerçek C# → analyzer → IR → OpenAPI → 3.1 meta-şema doğrulaması + operationId/param benzersizlik invariant'ları.
+2. **E2E fixture** (`pnpm test:e2e`) — checked-in fixture'lar: gerçek C# → analyzer → IR → OpenAPI;
+   fixture başına **golden** (`expected.openapi.yaml`, byte-byte) + 3.1 meta-şema + §T invariant'ları
+   (`checkOpenApiInvariants`); ayrıca gerçek CLI binary'si üzerinden exit kodu / stdout / opsiyon
+   sözleşmesi (`cli.e2e.test.ts`). Fixture → senaryo eşlemesi: `fixtures/dotnet/README.md`.
 3. **Canlı** (bu doküman) — **gerçek, dışarıdan** ASP.NET Core projeleri üzerinde uçtan uca `analyze` çalıştırma.
 
 ## Nasıl çalıştırılır (canlı)
@@ -441,7 +444,7 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 | Q4 | stdout (o yok) | stdout'a yazar | ✅ |
 | Q5 | `--title` / `--version-tag` override | info.title/version | ⚠️ |
 | Q6 | Override yoksa csproj'dan title/version | `<AssemblyName>`/`<Version>`/`<Description>` regex; çok-satırlı tag desteklenmez; solution → title=`.sln` adı, version `0.0.0` | ⚠️ |
-| Q7 | Determinizm | tek proje: route sırası = kaynak sırası (kararlı); **çoklu proje `.sln`: `solution.Projects` sıralanmıyor** → proje-arası sıra Roslyn enumerate'ine bağlı | ⚠️ |
+| Q7 | Determinizm | tek proje: route sırası = dosya yolu (Ordinal) sırası, dosya içinde kaynak sırası; `.sln`: projeler dosya yoluna göre sıralanır → çıktı OS'ten bağımsız (golden e2e bunu doğrular) | ✅ |
 | Q8 | operationId çakışması dedup | benzersiz operationId | ✅ (e2e invariant) |
 | Q9 | Duplicate parametre engellenir | benzersiz param | ✅ (e2e invariant) |
 | Q10 | Çıktı OpenAPI 3.1 meta-şema geçerli | valid | ✅ (e2e) |
@@ -472,7 +475,9 @@ Doğrulama için beklenen: sıfır çıkış kodu, geçerli OpenAPI 3.1, ve manu
 
 ## T. OpenAPI 3.1 geçerlilik invariant'ları (her canlı koşuda)
 
-Her canlı testte çıktı üzerinde otomatik kontrol edilmesi gerekenler:
+Her canlı testte çıktı üzerinde otomatik kontrol edilmesi gerekenler — ilk madde e2e'de
+`@seriousme/openapi-schema-validator`, kalanlar `packages/generator/src/invariants.ts`
+(`checkOpenApiInvariants`) ile **otomatik** kontrol edilir; canlı test aynı modülü kullanır:
 
 - [ ] OpenAPI 3.1 meta-şemasına göre **valid**.
 - [ ] Tüm `operationId`'ler **benzersiz**.
@@ -559,6 +564,13 @@ Data-annotation **constraint değerleri** (required/minLength/maxLength/min/max/
 format + koleksiyon-vs-string ayrımı L3b/L15) artık `DataAnnotationConstraintTests.cs`
 ile assert ediliyor. Kalan L-satırları (`[Length]` koleksiyon L14, format map'leri vb.)
 hâlâ kod-yolu + emit boru hattına dayanıyor.
+
+### E2E fixture kapsamı
+
+Grup 1 düzeltmeleri artık gerçek MSBuild derlemesi üzerinden golden e2e ile de korunuyor:
+`controllers-features` (E3, E12, E15, G36, I3, I29, J2, K2/K3/K8, L3b/L15, M19, B14, B32),
+`solution-multi-project` (R2/R6, Q7), `diagnostics-open-generic` (W004), `diagnostics-multi-csproj`
+(W007), `diagnostics-load-failure` (E001 → exit 1). Tam tablo: `fixtures/dotnet/README.md`.
 
 ---
 

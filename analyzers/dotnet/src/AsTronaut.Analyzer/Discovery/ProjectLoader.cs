@@ -105,7 +105,13 @@ public static class ProjectLoader
             try
             {
                 var solution = await workspace.OpenSolutionAsync(path);
-                return solution.Projects.ToList();
+                // Roslyn returns projects in solution-file order, which is whatever
+                // the author (or tooling) happened to write. Sort by the separator-
+                // normalised path (PathOrder) so route and schema order — and the
+                // "bare" name a colliding DTO wins — is the same on every machine.
+                return solution.Projects
+                    .OrderBy(p => PathOrder.Key(p.FilePath), StringComparer.Ordinal)
+                    .ToList();
             }
             catch (Exception ex)
             {

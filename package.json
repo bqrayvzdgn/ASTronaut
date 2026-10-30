@@ -18,6 +18,7 @@
     "format": "biome format --write .",
     "gen:proto": "pnpm --filter @astronaut/core gen:proto",
     "build:analyzers": "bash scripts/build-analyzers.sh",
+    "restore:fixtures": "bash scripts/restore-fixtures.sh",
     "cli": "pnpm --filter @astronaut/cli dev",
     "clean": "pnpm -r exec rimraf dist coverage .tsbuildinfo"
   },

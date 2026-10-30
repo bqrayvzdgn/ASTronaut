@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using AsTronaut.Analyzer.Diagnostics;
+using AsTronaut.Analyzer.Discovery;
 using AsTronaut.Analyzer.Ir;
 using AsTronaut.Analyzer.SchemaInference;
 using Microsoft.CodeAnalysis;
@@ -52,7 +53,14 @@ public sealed class ControllerWalker
 
     public void Walk()
     {
-        foreach (var tree in _compilation.SyntaxTrees)
+        // Documents arrive in whatever order MSBuild enumerated them, which differs
+        // by OS and file system. Walk them in Ordinal order of the separator-
+        // normalised file path (see PathOrder) so route and schema order — and
+        // therefore the emitted document — is stable everywhere; order inside a
+        // file is still source order.
+        var trees = _compilation.SyntaxTrees
+            .OrderBy(t => PathOrder.Key(t.FilePath), StringComparer.Ordinal);
+        foreach (var tree in trees)
         {
             var model = _compilation.GetSemanticModel(tree);
             var root = tree.GetRoot();
