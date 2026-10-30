@@ -12,7 +12,7 @@
     "gen:proto": "pnpm --filter @astronaut/core gen:proto",
     "build:analyzers": "dotnet publish analyzers/dotnet/src/AsTronaut.Analyzer/AsTronaut.Analyzer.csproj -c Release -o analyzers/dotnet/dist",
     "cli": "pnpm --filter @astronaut/cli dev",
-    "clean": "pnpm -r exec rimraf dist coverage .tsbuildinfo"
+    "clean": "pnpm -r exec rimraf dist .tsbuildinfo"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

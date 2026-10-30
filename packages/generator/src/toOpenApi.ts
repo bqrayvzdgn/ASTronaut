@@ -63,7 +63,7 @@ function buildPaths(result: ParseResult): Record<string, PathItemObject> | undef
     const item = paths[route.path] ?? {};
     // Two routes sharing the same path + method would silently overwrite each
     // other. Keep the first occurrence and skip later duplicates with a warning.
-    // biome-ignore lint/suspicious/noExplicitAny: PathItemObject's verb keys all hold OperationObject
+    // `as any`: PathItemObject's verb keys all hold OperationObject.
     if ((item as any)[verb] !== undefined) {
       warn(
         `Duplicate route ${route.method} ${route.path}; keeping the first and skipping the duplicate.`,
@@ -73,7 +73,6 @@ function buildPaths(result: ParseResult): Record<string, PathItemObject> | undef
     const op = routeToOperation(route);
     if (op.operationId)
       op.operationId = uniqueOperationId(op.operationId, route.tags, usedOperationIds);
-    // biome-ignore lint/suspicious/noExplicitAny: PathItemObject's verb keys all hold OperationObject
     (item as any)[verb] = op;
     paths[route.path] = item;
   }

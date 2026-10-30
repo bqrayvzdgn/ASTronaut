@@ -3,8 +3,8 @@
 // instead of producing an invalid OpenAPI spec downstream.
 //
 // The zod schemas mirror ir.ts. If you change ir.ts or parser.proto, change
-// these too. Field-presence drift across proto/parser.proto, ir.ts, this file,
-// and IR.cs is guarded by packages/core/test/drift.test.ts.
+// these too. Nothing checks proto/parser.proto, ir.ts, this file and IR.cs
+// for drift automatically; keep all four in sync by hand.
 
 import { z } from "zod";
 
