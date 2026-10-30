@@ -21,17 +21,21 @@ public static class HttpResultConventions
 
         if (IsFileHelper(helper))
         {
-            return response with { Schema = BinarySchema(), ContentType = "application/octet-stream" };
+            response.Schema = BinarySchema();
+            response.ContentType = "application/octet-stream";
+            return response;
         }
         if (helper == "Content")
         {
-            return response with { ContentType = "text/plain" };
+            response.ContentType = "text/plain";
+            return response;
         }
 
         var valueType = ValueType(helper, inv, model);
         if (valueType is not null && valueType.SpecialType != SpecialType.System_Void)
         {
-            response = response with { Schema = mapper.Map(valueType), ContentType = "application/json" };
+            response.Schema = mapper.Map(valueType);
+            response.ContentType = "application/json";
         }
         return response;
     }
@@ -78,7 +82,7 @@ public static class HttpResultConventions
         "File" or "PhysicalFile" or "FileStreamResult" or "FileContentResult";
 
     private static Schema BinarySchema() =>
-        new() { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "binary" };
+        new() { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "string", Format = "binary" };
 
     private static int? ReadStatusCodeArg(InvocationExpressionSyntax inv, SemanticModel model)
     {

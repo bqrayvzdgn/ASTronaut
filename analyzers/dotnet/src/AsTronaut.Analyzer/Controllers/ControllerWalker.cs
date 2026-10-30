@@ -129,7 +129,7 @@ public sealed class ControllerWalker
                     var parsed = RouteTemplateParser.Parse(template);
 
                     var route = BuildRoute(method, verb, parsed, classTag, filePath);
-                    if (methodObsolete) route = route with { Deprecated = true };
+                    if (methodObsolete) route.Deprecated = true;
                     _routes.Add(route);
                 }
             }
@@ -293,11 +293,11 @@ public sealed class ControllerWalker
             Method = verb,
             Path = parsed.NormalizedPath,
             OperationId = method.Name,
-            Tags = new List<string> { classTag },
+            Tags = { classTag },
             Source = MakeSourceLocation(method, filePath),
         };
-        if (docs.Summary is not null) routeInfo = routeInfo with { Summary = docs.Summary };
-        if (docs.Description is not null) routeInfo = routeInfo with { Description = docs.Description };
+        if (docs.Summary is not null) routeInfo.Summary = docs.Summary;
+        if (docs.Description is not null) routeInfo.Description = docs.Description;
 
         var pathParamNames = new HashSet<string>(
             parsed.PathParams.Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
@@ -322,7 +322,7 @@ public sealed class ControllerWalker
             };
             if (docs.Params.TryGetValue(p.Name, out var paramDoc))
             {
-                paramInfo = paramInfo with { Description = paramDoc };
+                paramInfo.Description = paramDoc;
             }
 
             switch (binding)
@@ -352,17 +352,19 @@ public sealed class ControllerWalker
             }
         }
 
-        if (pathParams.Count > 0) routeInfo = routeInfo with { PathParams = pathParams };
-        if (queryParams.Count > 0) routeInfo = routeInfo with { QueryParams = queryParams };
-        if (headerParams.Count > 0) routeInfo = routeInfo with { HeaderParams = headerParams };
+        routeInfo.PathParams.Add(pathParams);
+        routeInfo.QueryParams.Add(queryParams);
+        routeInfo.HeaderParams.Add(headerParams);
         if (body is not null)
         {
             var consumes = ReadContentTypes(method, "Consumes");
             if (consumes.Count > 0)
             {
-                body = body with { ContentType = consumes[0], ContentTypes = consumes };
+                body.ContentType = consumes[0];
+                body.ContentTypes.Clear();
+                body.ContentTypes.Add(consumes);
             }
-            routeInfo = routeInfo with { RequestBody = body };
+            routeInfo.RequestBody = body;
         }
 
         var declaredResponses = ResponseTypeReader.Read(method, typeMapper);
@@ -375,9 +377,7 @@ public sealed class ControllerWalker
         if (produces.Count > 0)
         {
             responses = responses
-                .Select(r => r.Schema is not null
-                    ? r with { ContentType = produces[0], ContentTypes = produces }
-                    : r)
+                .Select(r => r.Schema is not null ? WithContentTypes(r, produces) : r)
                 .ToList();
         }
 
@@ -385,16 +385,32 @@ public sealed class ControllerWalker
         {
             responses = responses
                 .Select(r => docs.ResponseDescriptions.TryGetValue(r.Status, out var d)
-                    ? r with { Description = d }
+                    ? WithDescription(r, d)
                     : r)
                 .ToList();
         }
-        routeInfo = routeInfo with { Responses = responses };
+        routeInfo.Responses.Add(responses);
 
         var auth = AuthReader.Resolve(method, method.ContainingType);
-        if (auth is not null) routeInfo = routeInfo with { Auth = auth };
+        if (auth is not null) routeInfo.Auth = auth;
 
         return routeInfo;
+    }
+
+    private static ResponseInfo WithContentTypes(ResponseInfo response, List<string> contentTypes)
+    {
+        var copy = response.Clone();
+        copy.ContentType = contentTypes[0];
+        copy.ContentTypes.Clear();
+        copy.ContentTypes.Add(contentTypes);
+        return copy;
+    }
+
+    private static ResponseInfo WithDescription(ResponseInfo response, string description)
+    {
+        var copy = response.Clone();
+        copy.Description = description;
+        return copy;
     }
 
     private List<ResponseInfo> CompleteDeclaredSchemas(
@@ -415,9 +431,17 @@ public sealed class ControllerWalker
 
         return declared
             .Select(r => r.Schema is null && schemaByStatus.TryGetValue(r.Status, out var src)
-                ? r with { Schema = src.Schema, ContentType = src.ContentType ?? "application/json" }
+                ? WithSchema(r, src)
                 : r)
             .ToList();
+    }
+
+    private static ResponseInfo WithSchema(ResponseInfo response, ResponseInfo source)
+    {
+        var copy = response.Clone();
+        copy.Schema = source.Schema;
+        copy.ContentType = string.IsNullOrEmpty(source.ContentType) ? "application/json" : source.ContentType;
+        return copy;
     }
 
     private static void UpsertPathParam(List<ParamInfo> pathParams, ParamInfo incoming)
@@ -427,11 +451,12 @@ public sealed class ControllerWalker
             if (string.Equals(pathParams[i].Name, incoming.Name, StringComparison.OrdinalIgnoreCase))
             {
                 var existing = pathParams[i];
-                var merged = incoming.Schema with
-                {
-                    Constraints = incoming.Schema.Constraints ?? existing.Schema.Constraints,
-                };
-                pathParams[i] = incoming with { Name = existing.Name, Schema = merged };
+                var merged = incoming.Schema.Clone();
+                merged.Constraints = incoming.Schema.Constraints ?? existing.Schema.Constraints;
+                var replacement = incoming.Clone();
+                replacement.Name = existing.Name;
+                replacement.Schema = merged;
+                pathParams[i] = replacement;
                 return;
             }
         }
@@ -467,12 +492,12 @@ public sealed class ControllerWalker
             return;
         }
         var obj = ResolveObjectSchema(paramInfo.Schema);
-        if (obj?.Properties is null)
+        if (obj is null || obj.Properties.Count == 0)
         {
             queryParams.Add(paramInfo);
             return;
         }
-        var required = obj.RequiredProperties ?? new List<string>();
+        var required = obj.RequiredProperties;
         foreach (var kvp in obj.Properties)
         {
             queryParams.Add(new ParamInfo
@@ -502,12 +527,12 @@ public sealed class ControllerWalker
         HashSet<string> pathParamNames)
     {
         var obj = ResolveObjectSchema(paramInfo.Schema);
-        if (obj?.Properties is null)
+        if (obj is null || obj.Properties.Count == 0)
         {
             queryParams.Add(paramInfo);
             return;
         }
-        var required = obj.RequiredProperties ?? new List<string>();
+        var required = obj.RequiredProperties;
         foreach (var kvp in obj.Properties)
         {
             var flattened = new ParamInfo
@@ -529,8 +554,8 @@ public sealed class ControllerWalker
 
     private Schema? ResolveObjectSchema(Schema schema)
     {
-        if (schema.Kind == "OBJECT") return schema;
-        if (schema.Kind == "REFERENCE" && schema.RefName is not null
+        if (schema.Kind == Schema.Types.Kind.Object) return schema;
+        if (schema.Kind == Schema.Types.Kind.Reference && schema.HasRefName
             && _schemaContext.SharedSchemas.TryGetValue(schema.RefName, out var target))
         {
             return target;
@@ -561,11 +586,8 @@ public sealed class ControllerWalker
         var response = new ResponseInfo { Status = status, Description = description };
         if (hasSchema && unwrapped is not null)
         {
-            response = response with
-            {
-                Schema = mapper.Map(unwrapped),
-                ContentType = "application/json",
-            };
+            response.Schema = mapper.Map(unwrapped);
+            response.ContentType = "application/json";
         }
         return new List<ResponseInfo> { response };
     }

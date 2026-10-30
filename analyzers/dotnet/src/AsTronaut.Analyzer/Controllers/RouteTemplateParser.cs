@@ -43,17 +43,17 @@ public static class RouteTemplateParser
         var name = parts.Count > 0 ? parts[0] : work;
         var constraintsRaw = parts.Skip(1).ToList();
 
-        var schema = new Schema { Kind = "PRIMITIVE", PrimitiveType = "string" };
+        var schema = new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "string" };
         var constraints = new Constraints();
         var hasConstraint = false;
 
         foreach (var c in constraintsRaw)
         {
-            ApplyConstraint(c, ref schema, constraints, ref hasConstraint);
+            ApplyConstraint(c, schema, constraints, ref hasConstraint);
         }
         if (hasConstraint)
         {
-            schema = schema with { Constraints = constraints };
+            schema.Constraints = constraints;
         }
         return (name, schema);
     }
@@ -80,7 +80,7 @@ public static class RouteTemplateParser
 
     private static void ApplyConstraint(
         string raw,
-        ref Schema schema,
+        Schema schema,
         Constraints constraints,
         ref bool hasConstraint)
     {
@@ -88,28 +88,36 @@ public static class RouteTemplateParser
         switch (name)
         {
             case "int":
-                schema = schema with { PrimitiveType = "integer", Format = "int32" };
+                schema.PrimitiveType = "integer";
+                schema.Format = "int32";
                 return;
             case "long":
-                schema = schema with { PrimitiveType = "integer", Format = "int64" };
+                schema.PrimitiveType = "integer";
+                schema.Format = "int64";
                 return;
             case "float":
-                schema = schema with { PrimitiveType = "number", Format = "float" };
+                schema.PrimitiveType = "number";
+                schema.Format = "float";
                 return;
             case "double":
-                schema = schema with { PrimitiveType = "number", Format = "double" };
+                schema.PrimitiveType = "number";
+                schema.Format = "double";
                 return;
             case "decimal":
-                schema = schema with { PrimitiveType = "number", Format = "decimal" };
+                schema.PrimitiveType = "number";
+                schema.Format = "decimal";
                 return;
             case "bool":
-                schema = schema with { PrimitiveType = "boolean", Format = null };
+                schema.PrimitiveType = "boolean";
+                schema.ClearFormat();
                 return;
             case "datetime":
-                schema = schema with { PrimitiveType = "string", Format = "date-time" };
+                schema.PrimitiveType = "string";
+                schema.Format = "date-time";
                 return;
             case "guid":
-                schema = schema with { PrimitiveType = "string", Format = "uuid" };
+                schema.PrimitiveType = "string";
+                schema.Format = "uuid";
                 return;
             case "alpha":
                 constraints.Pattern = "^[A-Za-z]+$";

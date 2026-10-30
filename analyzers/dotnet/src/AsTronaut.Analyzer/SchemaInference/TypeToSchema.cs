@@ -28,9 +28,10 @@ public sealed class TypeToSchema
         var nullable = nullableFromNRT || wrappedNullable;
 
         var schema = MapInner(inner);
-        if (nullable && schema.Nullable != true)
+        if (nullable && !schema.Nullable)
         {
-            schema = schema with { Nullable = true };
+            schema = schema.Clone();
+            schema.Nullable = true;
         }
         return schema;
     }
@@ -52,55 +53,55 @@ public sealed class TypeToSchema
         switch (type.SpecialType)
         {
             case SpecialType.System_String:
-                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "string" };
+                return new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "string" };
             case SpecialType.System_Boolean:
-                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "boolean" };
+                return new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "boolean" };
             case SpecialType.System_Byte:
             case SpecialType.System_SByte:
             case SpecialType.System_Int16:
             case SpecialType.System_UInt16:
             case SpecialType.System_Int32:
             case SpecialType.System_UInt32:
-                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "integer", Format = "int32" };
+                return new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "integer", Format = "int32" };
             case SpecialType.System_Int64:
             case SpecialType.System_UInt64:
-                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "integer", Format = "int64" };
+                return new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "integer", Format = "int64" };
             case SpecialType.System_Single:
-                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "number", Format = "float" };
+                return new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "number", Format = "float" };
             case SpecialType.System_Double:
-                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "number", Format = "double" };
+                return new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "number", Format = "double" };
             case SpecialType.System_Decimal:
-                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "number", Format = "decimal" };
+                return new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "number", Format = "decimal" };
             case SpecialType.System_Char:
-                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "string" };
+                return new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "string" };
             case SpecialType.System_Object:
-                return new Schema { Kind = "OBJECT" };
+                return new Schema { Kind = Schema.Types.Kind.Object };
             case SpecialType.System_Void:
-                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "null" };
+                return new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "null" };
         }
 
         var fullName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         switch (fullName)
         {
             case "global::System.Guid":
-                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "uuid" };
+                return new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "string", Format = "uuid" };
             case "global::System.DateTime":
             case "global::System.DateTimeOffset":
-                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "date-time" };
+                return new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "string", Format = "date-time" };
             case "global::System.DateOnly":
-                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "date" };
+                return new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "string", Format = "date" };
             case "global::System.TimeOnly":
             case "global::System.TimeSpan":
-                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "time" };
+                return new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "string", Format = "time" };
             case "global::System.Uri":
-                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "uri" };
+                return new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "string", Format = "uri" };
             case "global::Microsoft.AspNetCore.Http.IFormFile":
-                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "binary" };
+                return new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "string", Format = "binary" };
             case "global::Microsoft.AspNetCore.Http.IFormFileCollection":
                 return new Schema
                 {
-                    Kind = "ARRAY",
-                    Items = new Schema { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "binary" },
+                    Kind = Schema.Types.Kind.Array,
+                    Items = new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "string", Format = "binary" },
                 };
             case "global::System.Text.Json.JsonDocument":
             case "global::System.Text.Json.JsonElement":
@@ -108,7 +109,7 @@ public sealed class TypeToSchema
             case "global::System.Text.Json.Nodes.JsonObject":
             case "global::Newtonsoft.Json.Linq.JObject":
             case "global::Newtonsoft.Json.Linq.JToken":
-                return new Schema { Kind = "OBJECT" };
+                return new Schema { Kind = Schema.Types.Kind.Object };
         }
 
         if (type.TypeKind == TypeKind.Enum && type is INamedTypeSymbol enumType)
@@ -120,9 +121,9 @@ public sealed class TypeToSchema
         {
             if (arr.ElementType.SpecialType == SpecialType.System_Byte)
             {
-                return new Schema { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "byte" };
+                return new Schema { Kind = Schema.Types.Kind.Primitive, PrimitiveType = "string", Format = "byte" };
             }
-            return new Schema { Kind = "ARRAY", Items = Map(arr.ElementType) };
+            return new Schema { Kind = Schema.Types.Kind.Array, Items = Map(arr.ElementType) };
         }
 
         if (type is INamedTypeSymbol tuple && tuple.IsTupleType)
@@ -135,13 +136,13 @@ public sealed class TypeToSchema
             var def = generic.ConstructedFrom;
             if (IsEnumerableLike(def) && generic.TypeArguments.Length == 1)
             {
-                return new Schema { Kind = "ARRAY", Items = Map(generic.TypeArguments[0]) };
+                return new Schema { Kind = Schema.Types.Kind.Array, Items = Map(generic.TypeArguments[0]) };
             }
             if (IsDictionaryLike(def) && generic.TypeArguments.Length == 2)
             {
                 return new Schema
                 {
-                    Kind = "OBJECT",
+                    Kind = Schema.Types.Kind.Object,
                     AdditionalProperties = Map(generic.TypeArguments[1]),
                 };
             }
@@ -159,7 +160,7 @@ public sealed class TypeToSchema
                 ? _ctx.GetOrCreateReference(named, () => BuildPolymorphicSchema(named))
                 : _ctx.GetOrCreateReference(named, () => BuildClassSchema(named));
         }
-        return new Schema { Kind = "OBJECT" };
+        return new Schema { Kind = Schema.Types.Kind.Object };
     }
 
     private Schema BuildEnumSchema(INamedTypeSymbol enumType)
@@ -172,9 +173,9 @@ public sealed class TypeToSchema
             var names = members.Select(f => $"\"{ResolveEnumMemberName(f)}\"").ToList();
             return new Schema
             {
-                Kind = "PRIMITIVE",
+                Kind = Schema.Types.Kind.Primitive,
                 PrimitiveType = "string",
-                Constraints = names.Count > 0 ? new Constraints { EnumValues = names } : null,
+                Constraints = names.Count > 0 ? new Constraints { EnumValues = { names } } : null,
             };
         }
 
@@ -187,10 +188,10 @@ public sealed class TypeToSchema
                 : "int32";
         return new Schema
         {
-            Kind = "PRIMITIVE",
+            Kind = Schema.Types.Kind.Primitive,
             PrimitiveType = "integer",
             Format = format,
-            Constraints = values.Count > 0 ? new Constraints { EnumValues = values } : null,
+            Constraints = values.Count > 0 ? new Constraints { EnumValues = { values } } : null,
         };
     }
 
@@ -245,7 +246,7 @@ public sealed class TypeToSchema
             var variant = Map(derivedType);
             variants.Add(variant);
 
-            if (attr.ConstructorArguments.Length >= 2 && variant.RefName is not null)
+            if (attr.ConstructorArguments.Length >= 2 && variant.HasRefName)
             {
                 var disc = attr.ConstructorArguments[1].Value?.ToString();
                 if (!string.IsNullOrEmpty(disc)) mapping[disc!] = variant.RefName;
@@ -259,10 +260,10 @@ public sealed class TypeToSchema
 
         return new Schema
         {
-            Kind = "ONE_OF",
-            Variants = variants,
+            Kind = Schema.Types.Kind.OneOf,
+            Variants = { variants },
             Discriminator = propName,
-            DiscriminatorMapping = mapping.Count > 0 ? mapping : null,
+            DiscriminatorMapping = { mapping },
         };
     }
 
@@ -316,9 +317,9 @@ public sealed class TypeToSchema
 
         return new Schema
         {
-            Kind = "OBJECT",
-            Properties = properties.Count > 0 ? properties : null,
-            RequiredProperties = required.Count > 0 ? required : null,
+            Kind = Schema.Types.Kind.Object,
+            Properties = { properties },
+            RequiredProperties = { required },
         };
     }
 
@@ -343,9 +344,9 @@ public sealed class TypeToSchema
 
         return new Schema
         {
-            Kind = "OBJECT",
-            Properties = properties.Count > 0 ? properties : null,
-            RequiredProperties = required.Count > 0 ? required : null,
+            Kind = Schema.Types.Kind.Object,
+            Properties = { properties },
+            RequiredProperties = { required },
         };
     }
 

@@ -14,13 +14,15 @@
   },
   "files": ["dist", "src"],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "gen:proto": "echo 'TODO(M1+): wire ts-proto or @bufbuild/protobuf-es; types currently hand-aligned with proto/parser.proto'"
+    "build": "buf generate && tsc -p tsconfig.json",
+    "gen:proto": "buf generate"
   },
   "dependencies": {
-    "zod": "^3.24.1"
+    "@bufbuild/protobuf": "^2.16.0"
   },
   "devDependencies": {
+    "@bufbuild/buf": "^1.75.0",
+    "@bufbuild/protoc-gen-es": "^2.16.0",
     "typescript": "^5.7.2"
   }
 }
