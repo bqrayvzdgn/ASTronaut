@@ -9,7 +9,7 @@ namespace ControllersFeatures.Controllers;
 //   L3b/L15 [MaxLength] on a collection vs a string · I29 snake_case names.
 //
 // Known findings FROZEN in expected.openapi.yaml — recorded, not fixed here (see
-// fixtures/dotnet/README.md "Golden'larda dondurulmuş bilinen bulgular"):
+// README "Known findings frozen in goldens"):
 //   F1 the flattened query names carry the JSON naming policy (`page_size`), but
 //      MVC query binding matches the property name; F2 initialised properties
 //      (`Page = 1`) are emitted `required: true`; F3 `ProductQuery` is hoisted as
