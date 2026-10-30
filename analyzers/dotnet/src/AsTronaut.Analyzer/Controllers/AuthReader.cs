@@ -39,15 +39,11 @@ public static class AuthReader
             }
         }
 
-        var info = new AuthInfo
-        {
-            Type = scheme.Type,
-            Scheme = scheme.Scheme,
-            Name = scheme.Name,
-            In = scheme.In,
-            BearerFormat = scheme.BearerFormat,
-            Id = id,
-        };
+        var info = new AuthInfo { Type = scheme.Type, Id = id };
+        if (scheme.Scheme is not null) info.Scheme = scheme.Scheme;
+        if (scheme.Name is not null) info.Name = scheme.Name;
+        if (scheme.In is not null) info.In = scheme.In;
+        if (scheme.BearerFormat is not null) info.BearerFormat = scheme.BearerFormat;
         return info;
     }
 

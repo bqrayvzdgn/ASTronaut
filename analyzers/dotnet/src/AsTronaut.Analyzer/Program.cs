@@ -1,11 +1,11 @@
 using System.Diagnostics;
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using System.Text;
 using AsTronaut.Analyzer.Controllers;
 using AsTronaut.Analyzer.Discovery;
 using AsTronaut.Analyzer.Ir;
 using AsTronaut.Analyzer.Logging;
 using AsTronaut.Analyzer.SchemaInference;
+using Google.Protobuf;
 using Microsoft.Build.Locator;
 
 namespace AsTronaut.Analyzer;
@@ -65,7 +65,7 @@ public static class Program
         {
             var failure = new ParseResult
             {
-                Errors = loadResult.Diagnostics.ToList(),
+                Errors = { loadResult.Diagnostics },
                 Metadata = new ParserMetadata
                 {
                     Framework = "aspnet",
@@ -74,7 +74,7 @@ public static class Program
                     ParserVersion = ParserVersion,
                 },
             };
-            Console.Out.WriteLine(JsonSerializer.Serialize(failure, BuildJsonOptions()));
+            WriteJson(failure);
             return 1;
         }
 
@@ -95,8 +95,8 @@ public static class Program
 
         var result = new ParseResult
         {
-            Routes = routes,
-            Errors = errors,
+            Routes = { routes },
+            Errors = { errors },
             Metadata = new ParserMetadata
             {
                 Framework = "aspnet",
@@ -104,23 +104,17 @@ public static class Program
                 DurationMs = stopwatch.ElapsedMilliseconds,
                 ParserVersion = ParserVersion,
             },
-            SharedSchemas = schemaContext.SharedSchemas.Count > 0
-                ? schemaContext.SharedSchemas
-                : null,
+            SharedSchemas = { schemaContext.SharedSchemas },
         };
 
-        var json = JsonSerializer.Serialize(result, BuildJsonOptions());
-        Console.Out.WriteLine(json);
+        WriteJson(result);
         return 0;
     }
 
-    private static JsonSerializerOptions BuildJsonOptions()
+    private static void WriteJson(IMessage message)
     {
-        return new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            WriteIndented = false,
-        };
+        var bytes = Encoding.UTF8.GetBytes(JsonFormatter.Default.Format(message) + Environment.NewLine);
+        using var stdout = Console.OpenStandardOutput();
+        stdout.Write(bytes);
     }
 }

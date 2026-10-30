@@ -14,13 +14,13 @@ public sealed class SchemaContext
         var key = StructuralKey(type);
         if (_registered.TryGetValue(key, out var existing))
         {
-            return new Schema { Kind = "REFERENCE", RefName = existing };
+            return new Schema { Kind = Schema.Types.Kind.Reference, RefName = existing };
         }
         var name = AllocateName(type);
         _registered[key] = name;
-        SharedSchemas[name] = new Schema { Kind = "OBJECT" };
+        SharedSchemas[name] = new Schema { Kind = Schema.Types.Kind.Object };
         SharedSchemas[name] = build();
-        return new Schema { Kind = "REFERENCE", RefName = name };
+        return new Schema { Kind = Schema.Types.Kind.Reference, RefName = name };
     }
 
     private static string StructuralKey(INamedTypeSymbol type) =>

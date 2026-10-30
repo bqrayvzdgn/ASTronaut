@@ -23,7 +23,7 @@ public static class ResponseTypeReader
                     Status = 200,
                     Description = "Default",
                     Schema = schema,
-                    ContentType = schema is null ? null : "application/json",
+                    ContentType = schema is null ? "" : "application/json",
                 });
                 continue;
             }
@@ -36,7 +36,7 @@ public static class ResponseTypeReader
                 Status = status,
                 Description = DescribeStatus(status),
                 Schema = statusSchema,
-                ContentType = statusSchema is null ? null : "application/json",
+                ContentType = statusSchema is null ? "" : "application/json",
             });
         }
         return responses;

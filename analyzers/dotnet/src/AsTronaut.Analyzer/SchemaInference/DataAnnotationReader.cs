@@ -13,26 +13,13 @@ public static class DataAnnotationReader
         var current = schema;
         var constraints = current.Constraints is null
             ? new Constraints()
-            : new Constraints
-            {
-                Minimum = current.Constraints.Minimum,
-                Maximum = current.Constraints.Maximum,
-                ExclusiveMinimum = current.Constraints.ExclusiveMinimum,
-                ExclusiveMaximum = current.Constraints.ExclusiveMaximum,
-                MinLength = current.Constraints.MinLength,
-                MaxLength = current.Constraints.MaxLength,
-                MinItems = current.Constraints.MinItems,
-                MaxItems = current.Constraints.MaxItems,
-                UniqueItems = current.Constraints.UniqueItems,
-                Pattern = current.Constraints.Pattern,
-                EnumValues = current.Constraints.EnumValues,
-                MultipleOf = current.Constraints.MultipleOf,
-            };
+            : current.Constraints.Clone();
 
         var touched = current.Constraints is not null;
-        string? formatOverride = current.Format;
+        string? currentFormat = current.HasFormat ? current.Format : null;
+        string? formatOverride = currentFormat;
 
-        var isCollection = string.Equals(current.Kind, "ARRAY", StringComparison.Ordinal);
+        var isCollection = current.Kind == Schema.Types.Kind.Array;
 
         foreach (var attr in attributes)
         {
@@ -123,12 +110,12 @@ public static class DataAnnotationReader
             }
         }
 
-        if (!touched && formatOverride == current.Format) return current;
-        return current with
-        {
-            Format = formatOverride,
-            Constraints = touched ? constraints : current.Constraints,
-        };
+        if (!touched && formatOverride == currentFormat) return current;
+        var updated = current.Clone();
+        if (formatOverride is null) updated.ClearFormat();
+        else updated.Format = formatOverride;
+        updated.Constraints = touched ? constraints : current.Constraints;
+        return updated;
     }
 
     public static bool HasRequired(ISymbol owner)

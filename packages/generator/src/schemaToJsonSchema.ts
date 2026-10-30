@@ -1,4 +1,4 @@
-import type { Constraints, Schema } from "@astronaut/core";
+import { type Constraints, type Schema, Schema_Kind } from "@astronaut/core";
 import type { SchemaObject, SchemaType } from "./types.js";
 
 const PRIMITIVE_TO_JSON_TYPE: Record<string, SchemaType> = {
@@ -16,21 +16,21 @@ export function schemaToJsonSchema(schema: Schema): SchemaObject {
 
 function buildJsonSchema(schema: Schema): SchemaObject {
   switch (schema.kind) {
-    case "PRIMITIVE":
+    case Schema_Kind.PRIMITIVE:
       return buildPrimitive(schema);
-    case "OBJECT":
+    case Schema_Kind.OBJECT:
       return buildObject(schema);
-    case "ARRAY":
+    case Schema_Kind.ARRAY:
       return buildArray(schema);
-    case "REFERENCE":
+    case Schema_Kind.REFERENCE:
       return buildReference(schema);
-    case "ONE_OF":
+    case Schema_Kind.ONE_OF:
       return buildOneOf(schema);
-    case "ANY_OF": {
+    case Schema_Kind.ANY_OF: {
       const variants = schema.variants ?? [];
       return variants.length > 0 ? { anyOf: variants.map(schemaToJsonSchema) } : {};
     }
-    case "ALL_OF": {
+    case Schema_Kind.ALL_OF: {
       const variants = schema.variants ?? [];
       return variants.length > 0 ? { allOf: variants.map(schemaToJsonSchema) } : {};
     }
@@ -49,7 +49,7 @@ function buildPrimitive(schema: Schema): SchemaObject {
 
 function buildObject(schema: Schema): SchemaObject {
   const out: SchemaObject = { type: "object" };
-  if (schema.properties) {
+  if (Object.keys(schema.properties).length > 0) {
     out.properties = {};
     for (const [key, propSchema] of Object.entries(schema.properties)) {
       out.properties[key] = schemaToJsonSchema(propSchema);

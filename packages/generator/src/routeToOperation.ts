@@ -1,4 +1,4 @@
-import type { BodyInfo, ParamInfo, ResponseInfo, RouteInfo } from "@astronaut/core";
+import type { BodyInfo, ParamInfo, ResponseInfo, RouteInfo, Schema } from "@astronaut/core";
 import { schemaToJsonSchema } from "./schemaToJsonSchema.js";
 import type {
   HeaderObject,
@@ -44,7 +44,7 @@ function toParameter(
   const out: ParameterObject = {
     name: param.name,
     in: location,
-    schema: schemaToJsonSchema(param.schema),
+    schema: schemaToJsonSchema(requireSchema(param.schema)),
   };
   const required = forceRequired || param.required;
   if (required) out.required = true;
@@ -54,7 +54,7 @@ function toParameter(
 }
 
 function toRequestBody(body: BodyInfo): RequestBodyObject {
-  const jsonSchema = schemaToJsonSchema(body.schema);
+  const jsonSchema = schemaToJsonSchema(requireSchema(body.schema));
   const types =
     body.contentTypes && body.contentTypes.length > 0 ? body.contentTypes : [body.contentType];
   const content: RequestBodyObject["content"] = {};
@@ -82,7 +82,7 @@ function toResponseObject(response: ResponseInfo): ResponseObject {
     const types =
       response.contentTypes && response.contentTypes.length > 0
         ? response.contentTypes
-        : [response.contentType ?? "application/json"];
+        : [response.contentType || "application/json"];
     out.content = {};
     for (const ct of types) out.content[ct] = { schema: jsonSchema };
   }
@@ -96,7 +96,7 @@ function toResponseObject(response: ResponseInfo): ResponseObject {
 }
 
 function toHeaderObject(param: ParamInfo): HeaderObject {
-  const out: HeaderObject = { schema: schemaToJsonSchema(param.schema) };
+  const out: HeaderObject = { schema: schemaToJsonSchema(requireSchema(param.schema)) };
   if (param.required) out.required = true;
   if (param.description) out.description = param.description;
   if (param.example !== undefined) out.example = parseJsonLiteral(param.example);
@@ -109,4 +109,9 @@ function parseJsonLiteral(raw: string): unknown {
   } catch {
     return raw;
   }
+}
+
+function requireSchema(schema: Schema | undefined): Schema {
+  if (!schema) throw new Error("IR is missing a required schema; parseIR should have rejected it");
+  return schema;
 }

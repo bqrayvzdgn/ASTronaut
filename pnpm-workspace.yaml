@@ -4,3 +4,6 @@ packages:
 
 onlyBuiltDependencies:
   - esbuild
+
+ignoredBuiltDependencies:
+  - "@bufbuild/buf"

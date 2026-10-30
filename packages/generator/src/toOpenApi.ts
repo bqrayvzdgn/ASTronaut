@@ -50,7 +50,8 @@ export function toOpenApi(result: ParseResult, options: ToOpenApiOptions = {}): 
 }
 
 function deriveTitle(result: ParseResult): string {
-  return result.metadata.framework ? `${result.metadata.framework} API` : "API";
+  const framework = result.metadata?.framework;
+  return framework ? `${framework} API` : "API";
 }
 
 function buildPaths(result: ParseResult): Record<string, PathItemObject> | undefined {
