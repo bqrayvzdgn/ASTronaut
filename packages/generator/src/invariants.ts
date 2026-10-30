@@ -8,10 +8,8 @@ import type {
 } from "./types.js";
 
 // Semantic invariants the OpenAPI 3.1 meta-schema does not enforce but every
-// consumer relies on. Listed in README "End-to-end suite"; the meta-schema check
-// itself (T1) stays with the validator in the e2e suite. Pure and dependency-
-// free so the e2e suite, the live-project harness and a future CLI `--check`
-// can all share it.
+// consumer relies on. The meta-schema check itself is not done here. Pure and
+// dependency-free so any caller (e.g. a future CLI `--check`) can share it.
 export type InvariantRule =
   | "unique-operation-ids"
   | "unique-parameters"

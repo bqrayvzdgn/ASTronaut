@@ -9,23 +9,12 @@
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "build": "pnpm -r --filter \"./packages/*\" --filter \"./apps/*\" build",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "test:e2e": "vitest run --config vitest.e2e.config.ts",
-    "lint": "biome check .",
-    "lint:fix": "biome check --write .",
-    "format": "biome format --write .",
     "gen:proto": "pnpm --filter @astronaut/core gen:proto",
-    "build:analyzers": "bash scripts/build-analyzers.sh",
-    "restore:fixtures": "bash scripts/restore-fixtures.sh",
+    "build:analyzers": "dotnet publish analyzers/dotnet/src/AsTronaut.Analyzer/AsTronaut.Analyzer.csproj -c Release -o analyzers/dotnet/dist",
     "cli": "pnpm --filter @astronaut/cli dev",
     "clean": "pnpm -r exec rimraf dist coverage .tsbuildinfo"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
-    "@vitest/coverage-v8": "^2.1.8",
-    "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "typescript": "^5.7.2"
   }
 }
