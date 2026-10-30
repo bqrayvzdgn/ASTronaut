@@ -2,20 +2,10 @@ using Microsoft.CodeAnalysis;
 
 namespace AsTronaut.Analyzer.SchemaInference;
 
-// Parameter/type classification used by the controller walker. Kept as a single
-// shared source (rather than inlined) so parameter/DI-service rules — e.g. that
-// ILogger<T> and DI services are not part of the HTTP surface — live in one place.
 public static class TypeClassifier
 {
     private static readonly SymbolDisplayFormat Fq = SymbolDisplayFormat.FullyQualifiedFormat;
 
-    // A framework/DI-provided parameter that is not part of the HTTP surface
-    // (skipped from path/query/body). Beyond the well-known request-context
-    // types, injected dependencies are almost always interfaces (IMediator,
-    // IUserService, IOptions<T>). Interfaces that are actually request data —
-    // IFormFile and collection interfaces (IEnumerable<T>, IList<T>) — are
-    // excluded. Abstract classes are intentionally NOT treated as services: a
-    // [JsonPolymorphic] abstract base is a valid request/response body.
     public static bool IsServiceType(ITypeSymbol type)
     {
         var full = type.ToDisplayString(Fq);
@@ -38,34 +28,18 @@ public static class TypeClassifier
 
         if (IsFormFileType(type)) return false;
         if (IsEnumerable(type)) return false;
-        // A scalar is route/query data, never a service. This matters for the
-        // class-typed scalars (string, Uri): they have no public settable property
-        // and would otherwise be misread as opaque services by the heuristic below
-        // and silently dropped. (Struct scalars like Guid/DateTime dodge it anyway.)
         if (IsSimpleType(type)) return false;
         if (type.TypeKind == TypeKind.Interface) return true;
 
-        // An EF Core DbContext is the classic constructor-injected concrete
-        // service, but — unlike a hand-written service — it DOES expose public
-        // settable properties (DbSet<T>), so the HasNoBindableSurface heuristic
-        // below would misread it as a request body. Detect it by base type.
         if (type is INamedTypeSymbol named2)
         {
             if (DerivesFromDbContext(named2)) return true;
 
-            // The DI container is not visible to static analysis, so we cannot know
-            // what was registered. Conservative heuristic: a concrete (non-abstract)
-            // class that is not a record and exposes no bindable surface (no public
-            // writable instance property) is an opaque service/marker (a hand-written
-            // service). A DTO always has at least one settable/init property or is a
-            // positional record, so real bodies are never flipped.
             return HasNoBindableSurface(named2);
         }
         return false;
     }
 
-    // True when the type derives (transitively) from EF Core's DbContext. Matched
-    // by fully-qualified name so no EF Core assembly reference is required.
     private static bool DerivesFromDbContext(INamedTypeSymbol type)
     {
         for (var t = type.BaseType; t is not null; t = t.BaseType)
@@ -78,9 +52,6 @@ public static class TypeClassifier
         return false;
     }
 
-    // True for a concrete, non-record class with no public writable instance
-    // property — i.e. nothing a model binder could populate. Used only as the
-    // last resort in IsServiceType (see the DI-invisibility note there).
     private static bool HasNoBindableSurface(INamedTypeSymbol type)
     {
         if (type.TypeKind != TypeKind.Class) return false;
@@ -97,7 +68,6 @@ public static class TypeClassifier
         return true;
     }
 
-    // A scalar that binds from the route/query as a single value.
     public static bool IsSimpleType(ITypeSymbol type)
     {
         if (type is INamedTypeSymbol nt
@@ -107,9 +77,6 @@ public static class TypeClassifier
         {
             type = nt.TypeArguments[0];
         }
-        // Enums bind from route/query as a single value (their underlying scalar
-        // or member name). Checked after the Nullable<T> unwrap so Nullable<MyEnum>
-        // is handled too.
         if (type.TypeKind == TypeKind.Enum) return true;
         switch (type.SpecialType)
         {
@@ -139,7 +106,6 @@ public static class TypeClassifier
             or "global::System.Uri";
     }
 
-    // IFormFile, IFormFileCollection, or a generic collection of IFormFile.
     public static bool IsFormFileType(ITypeSymbol type)
     {
         if (type.ToDisplayString(Fq)

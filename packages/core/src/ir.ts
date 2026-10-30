@@ -1,9 +1,3 @@
-// ASTronaut IR — TypeScript surface aligned with proto/parser.proto.
-//
-// These types follow the proto3 canonical JSON mapping so subprocess parsers
-// (Go, .NET) can emit JSON that round-trips through here. The .proto file is
-// the source of truth; if you change one, change both.
-
 export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS" | "TRACE";
 
 export type SchemaKind =
@@ -26,8 +20,6 @@ export type Severity = "warning" | "error";
 export interface Constraints {
   minimum?: number;
   maximum?: number;
-  // OpenAPI 3.1 / JSON Schema 2020-12: numeric bound, not a flag.
-  // `exclusiveMinimum: 5` ⇒ value > 5.
   exclusiveMinimum?: number;
   exclusiveMaximum?: number;
   minLength?: number;
@@ -54,11 +46,8 @@ export interface Schema {
   description?: string;
   defaultValue?: string;
   example?: string;
-  /** For OBJECT maps: schema of the value type → OpenAPI additionalProperties. */
   additionalProperties?: Schema;
-  /** For polymorphic ONE_OF: discriminator property name (e.g. "$type"). */
   discriminator?: string;
-  /** discriminator value → ref name of the variant schema. */
   discriminatorMapping?: Record<string, string>;
 }
 
@@ -74,7 +63,6 @@ export interface BodyInfo {
   contentType: string;
   schema: Schema;
   required: boolean;
-  /** All accepted content types (from [Consumes]); all share `schema`. */
   contentTypes?: string[];
 }
 
@@ -84,7 +72,6 @@ export interface ResponseInfo {
   schema?: Schema;
   contentType?: string;
   headers?: Record<string, ParamInfo>;
-  /** All produced content types (from [Produces]); all share `schema`. */
   contentTypes?: string[];
 }
 

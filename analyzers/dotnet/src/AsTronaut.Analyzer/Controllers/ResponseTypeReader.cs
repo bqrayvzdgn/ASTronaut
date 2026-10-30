@@ -4,13 +4,6 @@ using Microsoft.CodeAnalysis;
 
 namespace AsTronaut.Analyzer.Controllers;
 
-// Reads `[ProducesResponseType]`, `[ProducesResponseType<T>]`, and
-// `[ProducesDefaultResponseType]` attributes to produce ResponseInfo entries.
-// Supported attribute shapes:
-//   [ProducesResponseType(typeof(Foo), StatusCodes.Status200OK)]
-//   [ProducesResponseType(StatusCodes.Status404NotFound)]
-//   [ProducesResponseType<Foo>(200)]
-//   [ProducesResponseType(typeof(Foo), Type = typeof(Bar), StatusCode = 200)]
 public static class ResponseTypeReader
 {
     public static List<ResponseInfo> Read(ISymbol method, TypeToSchema mapper)
@@ -51,7 +44,6 @@ public static class ResponseTypeReader
 
     private static int ReadStatusCode(AttributeData attr)
     {
-        // Positional int arg in any slot.
         foreach (var arg in attr.ConstructorArguments)
         {
             if (arg.Value is int i) return i;
@@ -65,17 +57,14 @@ public static class ResponseTypeReader
 
     private static Schema? ReadTypeArg(AttributeData attr, INamedTypeSymbol attrClass, TypeToSchema mapper)
     {
-        // Generic form: ProducesResponseType<T>
         if (attrClass.IsGenericType && attrClass.TypeArguments.Length >= 1)
         {
             return mapper.Map(attrClass.TypeArguments[0]);
         }
-        // Positional typeof(T) arg.
         foreach (var arg in attr.ConstructorArguments)
         {
             if (arg.Value is ITypeSymbol t) return mapper.Map(t);
         }
-        // Named Type = typeof(T)
         foreach (var na in attr.NamedArguments)
         {
             if (na.Key == "Type" && na.Value.Value is ITypeSymbol t) return mapper.Map(t);
@@ -88,9 +77,6 @@ public static class ResponseTypeReader
             ? name.Substring(0, name.Length - 9)
             : name;
 
-    // Convention-based default status for a (verb, has-payload) pair. Used
-    // when an action declares no [ProducesResponseType] — better than
-    // always emitting "200" for POST/DELETE/PUT/PATCH.
     public static int InferDefaultStatus(string verb, bool hasSchema) => (verb, hasSchema) switch
     {
         ("POST", _) => 201,

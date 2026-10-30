@@ -5,15 +5,6 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace AsTronaut.Analyzer.Controllers;
 
-// Recovers responses for actions that return IActionResult/ActionResult (no
-// static payload type) by reading `return` statements in the method body:
-//   return Ok(dto)          → 200 + dto schema
-//   return NotFound()       → 404
-//   return CreatedAtAction(..., dto) → 201 + dto schema
-//   return StatusCode(422, e)        → 422 + e schema
-// Only invocations of ControllerBase helpers are recognized. Returns null when
-// the body yields nothing recognizable, so the caller can fall back to
-// return-type inference.
 public static class ControllerResultReader
 {
     public static List<ResponseInfo>? TryRead(IMethodSymbol method, Compilation compilation, TypeToSchema mapper)

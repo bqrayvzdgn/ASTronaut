@@ -4,9 +4,6 @@ using Microsoft.CodeAnalysis;
 
 namespace AsTronaut.Analyzer.SchemaInference;
 
-// Maps a Roslyn ITypeSymbol to an IR Schema. Handles primitives, well-known
-// .NET types, nullables (Nullable<T> + C# 8 NRT), arrays/collections, and
-// custom classes (hoisted into SharedSchemas via SchemaContext).
 public sealed class TypeToSchema
 {
     private readonly SchemaContext _ctx;
@@ -52,7 +49,6 @@ public sealed class TypeToSchema
 
     private Schema MapInner(ITypeSymbol type)
     {
-        // Well-known primitive special types.
         switch (type.SpecialType)
         {
             case SpecialType.System_String:
@@ -83,7 +79,6 @@ public sealed class TypeToSchema
                 return new Schema { Kind = "PRIMITIVE", PrimitiveType = "null" };
         }
 
-        // Well-known reference types by name.
         var fullName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         switch (fullName)
         {
@@ -107,8 +102,6 @@ public sealed class TypeToSchema
                     Kind = "ARRAY",
                     Items = new Schema { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "binary" },
                 };
-            // Free-form JSON containers → an unconstrained object rather than a
-            // walk of their internal members (RootElement, etc.).
             case "global::System.Text.Json.JsonDocument":
             case "global::System.Text.Json.JsonElement":
             case "global::System.Text.Json.Nodes.JsonNode":
@@ -118,17 +111,13 @@ public sealed class TypeToSchema
                 return new Schema { Kind = "OBJECT" };
         }
 
-        // Enums → integer (System.Text.Json default) with numeric enum values,
-        // or string with member names when a string-enum converter applies.
         if (type.TypeKind == TypeKind.Enum && type is INamedTypeSymbol enumType)
         {
             return BuildEnumSchema(enumType);
         }
 
-        // Arrays.
         if (type is IArrayTypeSymbol arr)
         {
-            // byte[] → base64 string
             if (arr.ElementType.SpecialType == SpecialType.System_Byte)
             {
                 return new Schema { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "byte" };
@@ -136,15 +125,11 @@ public sealed class TypeToSchema
             return new Schema { Kind = "ARRAY", Items = Map(arr.ElementType) };
         }
 
-        // Tuples: (int Count, string Name) / ValueTuple<...> → object whose
-        // properties are the tuple elements. Checked before generic collections
-        // because ValueTuple is itself a generic named type.
         if (type is INamedTypeSymbol tuple && tuple.IsTupleType)
         {
             return BuildTupleSchema(tuple);
         }
 
-        // Generic collections: IEnumerable<T>, List<T>, ICollection<T>, IReadOnlyList<T>, ...
         if (type is INamedTypeSymbol generic && generic.IsGenericType)
         {
             var def = generic.ConstructedFrom;
@@ -154,40 +139,26 @@ public sealed class TypeToSchema
             }
             if (IsDictionaryLike(def) && generic.TypeArguments.Length == 2)
             {
-                // Dictionary<TKey, TValue> → object with additionalProperties (the
-                // value schema). OpenAPI object keys are always strings, so a
-                // non-string TKey (int, enum, Guid, …) is fine here — the key type
-                // is not inspected and only the value schema is emitted.
                 return new Schema
                 {
                     Kind = "OBJECT",
                     AdditionalProperties = Map(generic.TypeArguments[1]),
                 };
             }
-            // Wrappers we should unwrap: Task<T>, ValueTask<T>, ActionResult<T>.
             if (IsUnwrappableWrapper(def) && generic.TypeArguments.Length == 1)
             {
                 return Map(generic.TypeArguments[0]);
             }
         }
 
-        // Custom class or struct → hoist to SharedSchemas and return REFERENCE. A
-        // type marked [JsonPolymorphic] hoists as a discriminated ONE_OF instead.
-        // Structs and record structs are user-defined value-object DTOs whose
-        // public properties must be walked exactly like a class; the well-known
-        // value types (Guid, DateTime, TimeSpan, …) never reach here because they
-        // are resolved earlier by SpecialType / the fully-qualified-name switch.
         if (type is INamedTypeSymbol named
             && named.TypeKind is TypeKind.Class or TypeKind.Struct)
         {
-            // Anonymous types (e.g. return Ok(new { count })) have no useful name
-            // to hoist under → emit inline.
             if (named.IsAnonymousType) return BuildClassSchema(named);
             return HasPolymorphism(named)
                 ? _ctx.GetOrCreateReference(named, () => BuildPolymorphicSchema(named))
                 : _ctx.GetOrCreateReference(named, () => BuildClassSchema(named));
         }
-        // Interface (and any other unhandled kind) fallback → empty OBJECT.
         return new Schema { Kind = "OBJECT" };
     }
 
@@ -207,7 +178,6 @@ public sealed class TypeToSchema
             };
         }
 
-        // Numeric enum: emit the underlying constant values as JSON number literals.
         var values = members
             .Select(f => f.ConstantValue?.ToString() ?? "0")
             .ToList();
@@ -224,9 +194,6 @@ public sealed class TypeToSchema
         };
     }
 
-    // The serialized string for an enum member, honoring an explicit override via
-    // [JsonPropertyName("...")] (System.Text.Json) or
-    // [EnumMember(Value = "...")] (System.Runtime.Serialization / Newtonsoft).
     private static string ResolveEnumMemberName(IFieldSymbol member)
     {
         var jpn = AttributeReader.FindAttribute(member, "JsonPropertyName");
@@ -246,9 +213,6 @@ public sealed class TypeToSchema
         return member.Name;
     }
 
-    // A [JsonConverter(typeof(JsonStringEnumConverter))] (System.Text.Json) or
-    // [JsonConverter(typeof(StringEnumConverter))] (Newtonsoft) on the enum type
-    // forces string serialization regardless of the global default.
     private static bool HasStringEnumConverter(INamedTypeSymbol enumType)
     {
         var attr = AttributeReader.FindAttribute(enumType, "JsonConverter");
@@ -264,13 +228,10 @@ public sealed class TypeToSchema
         return false;
     }
 
-    // True when `type` is a [JsonPolymorphic] base declaring [JsonDerivedType]s.
     private static bool HasPolymorphism(INamedTypeSymbol type) =>
         AttributeReader.HasAttribute(type, "JsonPolymorphic")
         && AttributeReader.FindAttribute(type, "JsonDerivedType") is not null;
 
-    // [JsonPolymorphic] + [JsonDerivedType(typeof(T), "disc")] → discriminated
-    // ONE_OF: each derived type is a variant, with a value→refName mapping.
     private Schema BuildPolymorphicSchema(INamedTypeSymbol baseType)
     {
         var variants = new List<Schema>();
@@ -281,7 +242,7 @@ public sealed class TypeToSchema
             if (attr.ConstructorArguments.Length == 0) continue;
             if (attr.ConstructorArguments[0].Value is not INamedTypeSymbol derivedType) continue;
 
-            var variant = Map(derivedType); // REFERENCE to the hoisted derived schema
+            var variant = Map(derivedType);
             variants.Add(variant);
 
             if (attr.ConstructorArguments.Length >= 2 && variant.RefName is not null)
@@ -310,8 +271,6 @@ public sealed class TypeToSchema
         var properties = new Dictionary<string, Schema>();
         var required = new List<string>();
 
-        // Walk the inheritance chain most-derived first so derived properties
-        // win over inherited ones with the same serialized name.
         for (var t = type; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
         {
             foreach (var member in t.GetMembers().OfType<IPropertySymbol>())
@@ -328,16 +287,12 @@ public sealed class TypeToSchema
                 propSchema = DataAnnotationReader.Apply(propSchema, member);
                 properties[propName] = propSchema;
 
-                // Required when the NRT/value-type rules say so OR an explicit
-                // [Required] annotation is present (which overrides nullability).
                 if (IsRequired(member) || DataAnnotationReader.HasRequired(member))
                 {
                     required.Add(propName);
                 }
             }
 
-            // System.Text.Json ignores fields by default, so only fields that are
-            // explicitly opted in via [JsonInclude] participate in serialization.
             foreach (var field in t.GetMembers().OfType<IFieldSymbol>())
             {
                 if (field.DeclaredAccessibility != Accessibility.Public) continue;
@@ -367,9 +322,6 @@ public sealed class TypeToSchema
         };
     }
 
-    // Tuple → object with one property per element. Element names are used when
-    // declared ((int Count, string Name)); otherwise the positional Item1,
-    // Item2, … names are emitted.
     private Schema BuildTupleSchema(INamedTypeSymbol tuple)
     {
         var properties = new Dictionary<string, Schema>();
@@ -400,19 +352,14 @@ public sealed class TypeToSchema
     private static bool IsRequired(IPropertySymbol property) =>
         IsRequiredMember(property.Type, property.IsRequired);
 
-    // Shared required-ness rule for properties, fields, and tuple elements:
-    // the `required` keyword, a non-nullable reference type, or a non-Nullable<T>
-    // value type all imply the member must be present.
     private static bool IsRequiredMember(ITypeSymbol type, bool requiredKeyword)
     {
         if (requiredKeyword) return true;
-        // NRT: non-nullable reference type ⇒ required.
         if (type.IsReferenceType
             && type.NullableAnnotation == NullableAnnotation.NotAnnotated)
         {
             return true;
         }
-        // Value type that is NOT Nullable<T> ⇒ required.
         if (type.IsValueType
             && !(type is INamedTypeSymbol nt
                  && nt.ConstructedFrom?.SpecialType == SpecialType.System_Nullable_T))
@@ -435,7 +382,6 @@ public sealed class TypeToSchema
             or "global::System.Collections.Generic.HashSet<T>"
             or "global::System.Collections.Generic.ISet<T>"
             or "global::System.Collections.Generic.IReadOnlySet<T>"
-            // Async streams serialize as JSON arrays of the element type.
             or "global::System.Collections.Generic.IAsyncEnumerable<T>";
     }
 
@@ -457,14 +403,8 @@ public sealed class TypeToSchema
             or "global::Microsoft.AspNetCore.Mvc.ActionResult<TValue>";
     }
 
-    // Resolves the serialized property name, honoring explicit serialization
-    // attributes so the emitted schema matches the real wire format. A
-    // per-property [JsonPropertyName]/[JsonProperty] override ALWAYS wins; absent
-    // that, the global naming policy applies (defaulting to ASP.NET Core's
-    // camelCase when no policy was detected).
     private string ResolvePropertyName(ISymbol member)
     {
-        // System.Text.Json: [JsonPropertyName("...")].
         var jpn = AttributeReader.FindAttribute(member, "JsonPropertyName");
         if (jpn is not null
             && AttributeReader.GetStringArg(jpn, 0) is { Length: > 0 } explicitName)
@@ -472,7 +412,6 @@ public sealed class TypeToSchema
             return explicitName;
         }
 
-        // Newtonsoft.Json: [JsonProperty("...")] or [JsonProperty(PropertyName = "...")].
         var jp = AttributeReader.FindAttribute(member, "JsonProperty");
         if (jp is not null)
         {
@@ -484,9 +423,6 @@ public sealed class TypeToSchema
         return ApplyNamingPolicy(member.Name);
     }
 
-    // Applies the detected global naming policy to a CLR member name. No detected
-    // policy and an explicit CamelCase policy both yield camelCase (the default),
-    // so unconfigured compilations behave exactly as before.
     private string ApplyNamingPolicy(string name) => _namingPolicy switch
     {
         JsonNamingPolicyKind.AsIs => name,
@@ -494,13 +430,9 @@ public sealed class TypeToSchema
         JsonNamingPolicyKind.SnakeCaseUpper => ConvertCase(name, '_', upper: true),
         JsonNamingPolicyKind.KebabCaseLower => ConvertCase(name, '-', upper: false),
         JsonNamingPolicyKind.KebabCaseUpper => ConvertCase(name, '-', upper: true),
-        _ => ToCamelCase(name), // null (undetected) or CamelCase
+        _ => ToCamelCase(name),
     };
 
-    // Converts a PascalCase/camelCase identifier to a separator-delimited form,
-    // inserting the separator at word boundaries (a lowercase/digit→uppercase
-    // transition, or the last uppercase of a run before a lowercase letter):
-    // "UserId" → "user_id", "HTMLParser" → "html_parser", "IOStream" → "io_stream".
     private static string ConvertCase(string name, char separator, bool upper)
     {
         if (string.IsNullOrEmpty(name)) return name;
@@ -524,10 +456,6 @@ public sealed class TypeToSchema
         return sb.ToString();
     }
 
-    // True when the property is dropped from serialization entirely. Only an
-    // unconditional [JsonIgnore] (Condition=Always, the default) is dropped;
-    // conditional forms (WhenWritingNull/WhenWritingDefault) still serialize
-    // the property, so those remain in the schema.
     private static bool IsJsonIgnored(IPropertySymbol member)
     {
         var attr = AttributeReader.FindAttribute(member, "JsonIgnore");
@@ -536,11 +464,10 @@ public sealed class TypeToSchema
         {
             if (na.Key == "Condition")
             {
-                // JsonIgnoreCondition: Never=0, Always=1, WhenWritingDefault=2, WhenWritingNull=3.
                 return na.Value.Value is int c && c == 1;
             }
         }
-        return true; // No Condition ⇒ Always (Newtonsoft, or STJ default).
+        return true;
     }
 
     private static string ToCamelCase(string name)

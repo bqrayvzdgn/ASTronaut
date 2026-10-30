@@ -61,9 +61,6 @@ function buildPaths(result: ParseResult): Record<string, PathItemObject> | undef
     const verb = HTTP_METHOD_TO_OPENAPI[route.method];
     if (!verb) continue;
     const item = paths[route.path] ?? {};
-    // Two routes sharing the same path + method would silently overwrite each
-    // other. Keep the first occurrence and skip later duplicates with a warning.
-    // biome-ignore lint/suspicious/noExplicitAny: PathItemObject's verb keys all hold OperationObject
     if ((item as any)[verb] !== undefined) {
       warn(
         `Duplicate route ${route.method} ${route.path}; keeping the first and skipping the duplicate.`,
@@ -73,16 +70,12 @@ function buildPaths(result: ParseResult): Record<string, PathItemObject> | undef
     const op = routeToOperation(route);
     if (op.operationId)
       op.operationId = uniqueOperationId(op.operationId, route.tags, usedOperationIds);
-    // biome-ignore lint/suspicious/noExplicitAny: PathItemObject's verb keys all hold OperationObject
     (item as any)[verb] = op;
     paths[route.path] = item;
   }
   return paths;
 }
 
-// operationId must be unique across the whole document (many controllers share
-// action names like "Get"). Keep the first as-is; qualify a collision with its
-// tag (e.g. "Rating_Get"), then fall back to a numeric suffix.
 function uniqueOperationId(base: string, tags: string[] | undefined, used: Set<string>): string {
   if (!used.has(base)) {
     used.add(base);
@@ -103,8 +96,6 @@ function uniqueOperationId(base: string, tags: string[] | undefined, used: Set<s
   return result;
 }
 
-// The generator package has no Node type deps, so reach `console` defensively
-// through globalThis. Warnings go to stderr where the CLI already surfaces them.
 function warn(message: string): void {
   (globalThis as { console?: { warn(msg: string): void } }).console?.warn(message);
 }

@@ -77,15 +77,12 @@ function buildArray(schema: Schema): SchemaObject {
 }
 
 function buildReference(schema: Schema): SchemaObject {
-  // A REFERENCE without a target name can't be resolved. Rather than crashing
-  // the whole document, emit a permissive empty schema (valid OpenAPI 3.1).
   if (!schema.refName) return {};
   return { $ref: `#/components/schemas/${schema.refName}` };
 }
 
 function buildOneOf(schema: Schema): SchemaObject {
   const variants = schema.variants ?? [];
-  // An empty `oneOf: []` is invalid — fall back to a permissive empty schema.
   if (variants.length === 0) return {};
   const out: SchemaObject = { oneOf: variants.map(schemaToJsonSchema) };
   if (schema.discriminator) {
@@ -133,9 +130,6 @@ function applyConstraints(out: SchemaObject, constraints: Constraints | undefine
   }
 }
 
-// OpenAPI 3.1 expresses nullability via `type: [..., "null"]` for non-composite
-// schemas. For $ref and composite (oneOf/anyOf/allOf) we wrap with `oneOf` and
-// add a `{type: "null"}` variant — `allOf` cannot directly express null.
 function applyNullability(out: SchemaObject, schema: Schema): SchemaObject {
   if (!schema.nullable) return out;
   if (out.$ref !== undefined) {
@@ -148,7 +142,6 @@ function applyNullability(out: SchemaObject, schema: Schema): SchemaObject {
     return { ...out, anyOf: [...out.anyOf, { type: "null" }] };
   }
   if (out.allOf) {
-    // allOf cannot directly admit null — wrap the entire schema in oneOf.
     return { oneOf: [out, { type: "null" }] };
   }
   if (typeof out.type === "string") {
@@ -158,7 +151,6 @@ function applyNullability(out: SchemaObject, schema: Schema): SchemaObject {
     if (out.type.includes("null")) return out;
     return { ...out, type: [...out.type, "null"] };
   }
-  // No type at all (degenerate); fall back to wrapping.
   return { oneOf: [out, { type: "null" }] };
 }
 

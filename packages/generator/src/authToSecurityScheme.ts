@@ -1,14 +1,6 @@
 import type { AuthInfo } from "@astronaut/core";
 import type { SecuritySchemeObject } from "./types.js";
 
-// OpenAPI 3.1 marks two sub-fields as REQUIRED that a bare [Authorize] can't
-// supply, since the real values live in Program.cs runtime config:
-//   - oauth2         → `flows` (an OAuth Flows Object)
-//   - openIdConnect  → `openIdConnectUrl` (a URL)
-// Without them the emitted scheme fails the 3.1 meta-schema. We emit the minimal
-// spec-valid stand-ins: an empty `flows: {}` (every individual flow is optional)
-// and a documented placeholder discovery URL. The placeholder is deliberately a
-// well-formed, obviously-not-real URL so consumers know to substitute their own.
 const OIDC_PLACEHOLDER_URL = "https://example.com/.well-known/openid-configuration";
 
 export function authToSecurityScheme(auth: AuthInfo): SecuritySchemeObject {

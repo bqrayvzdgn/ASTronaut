@@ -5,10 +5,6 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace AsTronaut.Analyzer.Controllers;
 
-// Shared mapping from an ASP.NET result-helper invocation (Ok(dto), NotFound(),
-// CreatedAtRoute(.., dto), StatusCode(n, x), ...) to a ResponseInfo. Used by
-// ControllerResultReader (ControllerBase helpers) so the status table and
-// body-argument rules live in one place.
 public static class HttpResultConventions
 {
     public static ResponseInfo? Map(
@@ -23,8 +19,6 @@ public static class HttpResultConventions
             Description = ResponseTypeReader.DescribeStatusPublic(status.Value),
         };
 
-        // Non-JSON bodies: file downloads carry a binary payload; Content() writes
-        // a text/plain string. Both set a content type but skip JSON-schema inference.
         if (IsFileHelper(helper))
         {
             return response with { Schema = BinarySchema(), ContentType = "application/octet-stream" };
@@ -42,7 +36,6 @@ public static class HttpResultConventions
         return response;
     }
 
-    // Collapse duplicate status codes, preferring an entry that carries a schema.
     public static List<ResponseInfo> Dedup(List<ResponseInfo> responses)
     {
         var byStatus = new Dictionary<int, ResponseInfo>();
@@ -73,12 +66,9 @@ public static class HttpResultConventions
         "Conflict" => 409,
         "UnprocessableEntity" => 422,
         "Problem" => 500,
-        // File downloads → 200 with a binary body (handled in Map).
         "File" or "PhysicalFile" or "FileStreamResult" or "FileContentResult" => 200,
-        // Redirects → 302 (permanent variants → 301), no body.
         "Redirect" or "LocalRedirect" => 302,
         "RedirectPermanent" or "LocalRedirectPermanent" => 301,
-        // Json(x) behaves like Ok(x); Content(x) → 200 text/plain (handled in Map).
         "Json" or "Content" => 200,
         "StatusCode" => ReadStatusCodeArg(inv, model),
         _ => null,
@@ -87,7 +77,6 @@ public static class HttpResultConventions
     private static bool IsFileHelper(string helper) => helper is
         "File" or "PhysicalFile" or "FileStreamResult" or "FileContentResult";
 
-    // A binary payload schema, matching how IFormFile bodies are represented.
     private static Schema BinarySchema() =>
         new() { Kind = "PRIMITIVE", PrimitiveType = "string", Format = "binary" };
 
@@ -95,12 +84,9 @@ public static class HttpResultConventions
     {
         var first = inv.ArgumentList.Arguments.FirstOrDefault()?.Expression;
         if (first is null) return null;
-        // Resolves both literals (422) and constants (StatusCodes.Status422...).
         return model.GetConstantValue(first) is { HasValue: true, Value: int code } ? code : null;
     }
 
-    // The argument carrying the response body, per helper. String args (route
-    // names / messages) are treated as non-bodies.
     private static ITypeSymbol? ValueType(string helper, InvocationExpressionSyntax inv, SemanticModel model)
     {
         var args = inv.ArgumentList.Arguments;

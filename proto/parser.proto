@@ -1,42 +1,17 @@
-// ASTronaut v2 — Parser Intermediate Representation
-//
-// Single source of truth for the contract between parsers and the OpenAPI generator.
-// Every parser (parser-js, parser-go, parser-dotnet, ...) emits ParseResult.
-// The generator consumes ParseResult and produces OpenAPI 3.1 YAML.
-//
-// JSON serialization (proto3 canonical JSON mapping) is the wire format for
-// subprocess parsers (Go, .NET CLI). gRPC migration is V2; this proto already
-// supports it without changes.
-//
-// Versioning: package is `astronaut.v1`. Breaking changes allowed only in v0.x;
-// after v1.0.0 release, additive-only.
-
 syntax = "proto3";
 
 package astronaut.v1;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Root
-// ─────────────────────────────────────────────────────────────────────────────
 
 message ParseResult {
   repeated RouteInfo routes = 1;
   repeated ParseError errors = 2;
   ParserMetadata metadata = 3;
-  // Reusable component schemas (e.g. DTOs). Generator emits these under
-  // `components/schemas`; routes reference them via Schema with kind=REFERENCE.
   map<string, Schema> shared_schemas = 4;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Route
-// ─────────────────────────────────────────────────────────────────────────────
-
 message RouteInfo {
-  // HTTP method in upper case: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE.
   string method = 1;
 
-  // OpenAPI-style path with {param} placeholders, e.g. "/users/{id}/posts".
   string path = 2;
 
   repeated ParamInfo path_params = 3;
@@ -48,18 +23,14 @@ message RouteInfo {
 
   optional AuthInfo auth = 8;
 
-  string summary = 9;        // short, single-line
-  string description = 10;   // long-form, may be multi-line markdown
-  string operation_id = 11;  // unique within spec; generator may rename to dedup
+  string summary = 9;
+  string description = 10;
+  string operation_id = 11;
   repeated string tags = 12;
   bool deprecated = 13;
 
   SourceLocation source = 14;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Parameters and bodies
-// ─────────────────────────────────────────────────────────────────────────────
 
 message ParamInfo {
   string name = 1;
@@ -70,28 +41,20 @@ message ParamInfo {
 }
 
 message BodyInfo {
-  string content_type = 1;   // primary/default content type, e.g. "application/json"
+  string content_type = 1;
   Schema schema = 2;
   bool required = 3;
-  // Full set of accepted content types when more than one applies (from
-  // [Consumes]); all share `schema`. When empty, `content_type` is the only one.
   repeated string content_types = 4;
 }
 
 message ResponseInfo {
-  int32 status = 1;          // e.g. 200, 404
+  int32 status = 1;
   string description = 2;
   optional Schema schema = 3;
-  string content_type = 4;   // default "application/json" if schema present
+  string content_type = 4;
   map<string, ParamInfo> headers = 5;
-  // Full set of produced content types when more than one applies (from
-  // [Produces]); all share `schema`. When empty, `content_type` is the only one.
   repeated string content_types = 6;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Schema (compositional, OpenAPI 3.1 / JSON Schema 2020-12 friendly)
-// ─────────────────────────────────────────────────────────────────────────────
 
 message Schema {
   enum Kind {
@@ -105,41 +68,29 @@ message Schema {
   }
   Kind kind = 1;
 
-  // For REFERENCE: the key into ParseResult.shared_schemas.
   optional string ref_name = 2;
 
-  // For PRIMITIVE: "string" | "integer" | "number" | "boolean" | "null".
   optional string primitive_type = 3;
 
-  // OpenAPI format hint, e.g. "int32", "int64", "date-time", "uuid", "email".
   optional string format = 4;
 
-  // For OBJECT: property name → schema.
   map<string, Schema> properties = 5;
   repeated string required_properties = 6;
 
-  // For ARRAY: element schema.
   optional Schema items = 7;
 
-  // For ONE_OF / ANY_OF / ALL_OF: variant schemas.
   repeated Schema variants = 8;
 
   optional Constraints constraints = 9;
 
-  // OpenAPI 3.1 expresses nullable via `type: [..., "null"]`. We carry it as
-  // a flag here for parser ergonomics; generator emits the correct form.
   bool nullable = 10;
 
   string description = 11;
-  optional string default_value = 12;   // JSON-serialized literal
-  optional string example = 13;         // JSON-serialized literal
+  optional string default_value = 12;
+  optional string example = 13;
 
-  // For OBJECT maps/dictionaries: schema of the value type. Generator emits it
-  // as OpenAPI `additionalProperties`. When absent on an OBJECT, no constraint.
   optional Schema additional_properties = 14;
 
-  // For polymorphic ONE_OF: discriminator property name (e.g. "$type") and the
-  // mapping from discriminator value → ref_name of the variant schema.
   optional string discriminator = 15;
   map<string, string> discriminator_mapping = 16;
 }
@@ -147,9 +98,6 @@ message Schema {
 message Constraints {
   optional double minimum = 1;
   optional double maximum = 2;
-  // OpenAPI 3.1 / JSON Schema 2020-12 style: these are bounds, not flags.
-  // `exclusive_minimum: 5` means "value > 5". (3.0 used a boolean flag paired
-  // with `minimum`; the IR is 3.1-native, generator handles emission.)
   optional double exclusive_minimum = 3;
   optional double exclusive_maximum = 4;
   optional int32 min_length = 5;
@@ -158,65 +106,42 @@ message Constraints {
   optional int32 max_items = 8;
   optional bool unique_items = 9;
   optional string pattern = 10;
-  repeated string enum_values = 11;     // JSON-serialized literals
+  repeated string enum_values = 11;
   optional double multiple_of = 12;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Auth
-// ─────────────────────────────────────────────────────────────────────────────
-
 message AuthInfo {
-  // OpenAPI security scheme type: "http", "apiKey", "oauth2", "openIdConnect".
   string type = 1;
 
-  // For type=http: "bearer", "basic", etc. (the "scheme" sub-field in OpenAPI).
   optional string scheme = 2;
 
-  // For type=apiKey: header/query/cookie name.
   optional string name = 3;
 
-  // For type=apiKey: "header" | "query" | "cookie".
   optional string in = 4;
 
-  // For type=http+scheme=bearer: e.g. "JWT".
   optional string bearer_format = 5;
 
-  // Stable id used as key under components/securitySchemes.
-  // Multiple routes sharing the same auth will dedupe via this id.
   string id = 6;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Diagnostics
-// ─────────────────────────────────────────────────────────────────────────────
 
 message ParseError {
   string file = 1;
   int32 line = 2;
   string message = 3;
-  // "warning" | "error". Errors with severity="error" cause CLI to exit non-zero
-  // when --strict or when no routes were parsed at all.
   string severity = 4;
-  // Stable code (E001, W042, ...) for grep/CI suppression. Optional but
-  // recommended for parser authors.
   optional string code = 5;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Metadata
-// ─────────────────────────────────────────────────────────────────────────────
-
 message ParserMetadata {
-  string framework = 1;          // "express" | "gin" | "aspnet" | ...
-  string framework_version = 2;  // version detected from manifest, if any
+  string framework = 1;
+  string framework_version = 2;
   int32 files_scanned = 3;
   int64 duration_ms = 4;
-  string parser_version = 5;     // semver of the parser implementation
+  string parser_version = 5;
 }
 
 message SourceLocation {
-  string file = 1;   // path relative to repo root
+  string file = 1;
   int32 line = 2;
   int32 column = 3;
 }

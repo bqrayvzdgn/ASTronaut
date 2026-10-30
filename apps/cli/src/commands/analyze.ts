@@ -94,8 +94,6 @@ function handleAnalyzerError(err: unknown): void {
     ui.error(err.message);
     return;
   }
-  // runAnalyzer tags a missing `dotnet` executable with this name so the
-  // friendly message surfaces without the generic "Unexpected error" prefix.
   if (err instanceof Error && err.name === "DotnetNotFoundError") {
     ui.error(err.message);
     return;
