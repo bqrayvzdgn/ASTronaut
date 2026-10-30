@@ -15,8 +15,7 @@
   "files": ["dist", "src"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "gen:proto": "echo 'TODO(M1+): wire ts-proto or @bufbuild/protobuf-es; types currently hand-aligned with proto/parser.proto'",
-    "test": "vitest run"
+    "gen:proto": "echo 'TODO(M1+): wire ts-proto or @bufbuild/protobuf-es; types currently hand-aligned with proto/parser.proto'"
   },
   "dependencies": {
     "zod": "^3.24.1"
