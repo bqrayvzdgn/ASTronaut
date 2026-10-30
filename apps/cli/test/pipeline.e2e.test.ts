@@ -16,7 +16,7 @@ import { GOLDEN_FILE, fixturesDir, goldenPath, normalizeEol, repoRoot } from "./
 //   1. Golden: the emitted YAML matches fixtures/dotnet/<name>/expected.openapi.yaml
 //      byte for byte. Update deliberately with `pnpm test:e2e -u`, then review the diff.
 //   2. Spec validity: the OpenAPI 3.1 meta-schema.
-//   3. Invariants the meta-schema cannot express (docs/test-scenarios.md §T).
+//   3. Invariants the meta-schema cannot express (README "End-to-end suite").
 // The CLI process itself is checked against the same goldens in cli.e2e.test.ts.
 
 // Fixtures that must NOT produce a document (the CLI exits non-zero). They are

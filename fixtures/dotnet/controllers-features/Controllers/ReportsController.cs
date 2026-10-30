@@ -8,7 +8,7 @@ namespace ControllersFeatures.Controllers;
 // versions it does not declare.
 //
 // Known finding FROZEN in expected.openapi.yaml — recorded, not fixed here (see
-// fixtures/dotnet/README.md): F4 the generator's operationId dedup names the
+// README "Known findings frozen in goldens"): F4 the generator's operationId dedup names the
 // fanned-out `List` actions `Reports_List` (v1.0) and `List_2` (v2.0).
 [ApiController]
 [ApiVersion("1.0")]

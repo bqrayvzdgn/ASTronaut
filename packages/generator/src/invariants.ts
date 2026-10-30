@@ -8,7 +8,7 @@ import type {
 } from "./types.js";
 
 // Semantic invariants the OpenAPI 3.1 meta-schema does not enforce but every
-// consumer relies on. Mirrors docs/test-scenarios.md §T; the meta-schema check
+// consumer relies on. Listed in README "End-to-end suite"; the meta-schema check
 // itself (T1) stays with the validator in the e2e suite. Pure and dependency-
 // free so the e2e suite, the live-project harness and a future CLI `--check`
 // can all share it.
