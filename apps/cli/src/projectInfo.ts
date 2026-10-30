@@ -8,9 +8,6 @@ export interface ProjectInfo {
   description?: string;
 }
 
-// Picks the right metadata source for a detected entry. A solution has no single
-// csproj to read, so its title falls back to the solution file name (users can
-// still override with --title / --version-tag).
 export function readProjectInfoFor(detected: DetectedProject): ProjectInfo {
   if (detected.kind === "solution") {
     const title = basename(detected.path).replace(/\.(sln|slnx)$/i, "");
@@ -19,11 +16,6 @@ export function readProjectInfoFor(detected: DetectedProject): ProjectInfo {
   return readProjectInfo(detected.path);
 }
 
-// Reads a .csproj as text and pulls <AssemblyName>, <Version>, <Description>
-// out of any <PropertyGroup>. Multi-line values and attribute-laden tags are
-// not supported — MSBuild allows them, but the common case is simple text.
-// Falls back to the csproj's file name minus the extension when no
-// <AssemblyName> is declared (matches MSBuild's own default).
 export function readProjectInfo(csprojPath: string): ProjectInfo {
   let xml = "";
   try {
@@ -54,7 +46,6 @@ function defaultInfo(csprojPath: string): ProjectInfo {
 }
 
 function extractTag(xml: string, tag: string): string | undefined {
-  // Matches <Tag>value</Tag> with optional whitespace; rejects empty content.
   const pattern = new RegExp(`<${tag}>\\s*([^<\\s][^<]*?)\\s*</${tag}>`);
   const match = pattern.exec(xml);
   if (!match || !match[1]) return undefined;

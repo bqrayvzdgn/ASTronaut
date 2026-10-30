@@ -1,11 +1,3 @@
-// Runtime validators (zod) for IR. Used to fence subprocess parser output
-// before it reaches the generator — bad JSON dies here with a useful error
-// instead of producing an invalid OpenAPI spec downstream.
-//
-// The zod schemas mirror ir.ts. If you change ir.ts or parser.proto, change
-// these too. Nothing checks proto/parser.proto, ir.ts, this file and IR.cs
-// for drift automatically; keep all four in sync by hand.
-
 import { z } from "zod";
 
 export const httpMethodSchema = z.enum([
@@ -54,7 +46,6 @@ export const constraintsSchema = z
   })
   .strict();
 
-// Schema is recursive; declare with z.lazy.
 export const schemaSchema: z.ZodType<unknown> = z.lazy(() =>
   z
     .object({
@@ -175,8 +166,6 @@ export const parseResultSchema = z
   })
   .strict();
 
-// Friendly entry point used by parser-bridge: throws a typed error with a
-// concise message pointing at the offending field.
 export class IRValidationError extends Error {
   constructor(
     message: string,

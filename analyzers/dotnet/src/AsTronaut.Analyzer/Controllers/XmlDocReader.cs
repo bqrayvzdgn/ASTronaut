@@ -5,12 +5,6 @@ using Microsoft.CodeAnalysis;
 
 namespace AsTronaut.Analyzer.Controllers;
 
-// Reads XML documentation comments off a Roslyn ISymbol via
-// GetDocumentationCommentXml(). Returns the <summary> text, a per-parameter
-// map of <param name="..."> text, and per-status <response code="NNN">
-// descriptions. Inline doc tags (<c>/<code>/<see cref>/<see langword>/
-// <paramref>) are flattened to plain text. Implementation is defensive:
-// malformed XML returns empty results rather than throwing.
 public sealed class XmlDocReader
 {
     public string? Summary { get; }
@@ -18,8 +12,6 @@ public sealed class XmlDocReader
     public IReadOnlyDictionary<string, string> Params { get; }
     public string? Returns { get; }
 
-    // Per-status descriptions from <response code="NNN">text</response> tags
-    // (ASP.NET Core / Swashbuckle convention). Empty when none are present.
     public IReadOnlyDictionary<int, string> ResponseDescriptions { get; }
 
     private static readonly IReadOnlyDictionary<string, string> EmptyParams =
@@ -51,8 +43,6 @@ public sealed class XmlDocReader
         }
         try
         {
-            // Roslyn typically wraps the body in <member name="...">. Wrap it
-            // in a synthetic root so XDocument.Parse accepts either form.
             var doc = XDocument.Parse("<doc>" + xml + "</doc>");
             var summary = ReadElement(doc, "summary");
             var remarks = ReadElement(doc, "remarks");
@@ -95,15 +85,6 @@ public sealed class XmlDocReader
         return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 
-    // Recursively flattens an element's mixed content to plain text, reducing
-    // common inline doc tags to their textual meaning:
-    //   <c>x</c> / <code>x</code>           -> x
-    //   <see cref="T:Foo.Bar"/>             -> Bar
-    //   <see cref="Foo">display</see>       -> display
-    //   <see langword="null"/>              -> null
-    //   <paramref name="x"/>                -> x
-    // Any other tag is stripped but its inner text is preserved, so unknown or
-    // malformed inline tags degrade gracefully.
     private static string FlattenText(XElement element)
     {
         var sb = new StringBuilder();
@@ -133,7 +114,6 @@ public sealed class XmlDocReader
         {
             case "see":
             case "seealso":
-                // Prefer explicit display text: <see cref="Foo">text</see>.
                 var inner = FlattenText(e);
                 if (!string.IsNullOrWhiteSpace(inner))
                 {
@@ -163,30 +143,23 @@ public sealed class XmlDocReader
                 break;
 
             default:
-                // <c>, <code>, <para>, and any other tag: keep inner content.
                 AppendChildren(sb, e);
                 break;
         }
     }
 
-    // Reduces an XML doc cref (e.g. "T:Foo.Bar", "M:Foo.Bar(System.Int32)",
-    // "Foo`1") to a simple type/member name ("Bar", "Bar", "Foo").
     private static string SimpleName(string cref)
     {
         var s = cref;
 
-        // Strip the documentation-ID prefix "X:" (T:, M:, P:, F:, E:, N:, !:).
         if (s.Length > 2 && s[1] == ':') s = s.Substring(2);
 
-        // Drop any method parameter list.
         var paren = s.IndexOf('(');
         if (paren >= 0) s = s.Substring(0, paren);
 
-        // Take the last dotted segment.
         var dot = s.LastIndexOf('.');
         if (dot >= 0 && dot < s.Length - 1) s = s.Substring(dot + 1);
 
-        // Strip generic arity marker (e.g. "List`1").
         var tick = s.IndexOf('`');
         if (tick >= 0) s = s.Substring(0, tick);
 
@@ -195,8 +168,6 @@ public sealed class XmlDocReader
 
     private static string Normalize(string raw)
     {
-        // Roslyn-collected XML preserves indentation. Trim and collapse
-        // surrounding whitespace into single newlines.
         var lines = raw.Split('\n')
             .Select(l => l.Trim())
             .Where(l => l.Length > 0);

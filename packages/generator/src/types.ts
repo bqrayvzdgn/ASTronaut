@@ -1,8 +1,3 @@
-// Local OpenAPI 3.1 typing — only the subset we actually emit. Using a
-// hand-rolled type instead of `openapi3-ts` because that package's optional
-// fields are typed as `T | undefined`, which conflicts with the project's
-// `exactOptionalPropertyTypes` setting.
-
 export interface OpenApiDocument {
   openapi: "3.1.0";
   info: InfoObject;
@@ -79,8 +74,6 @@ export interface MediaTypeObject {
   schema: SchemaObject;
 }
 
-// JSON Schema 2020-12 subset. The "type" field can be a string or an array of
-// strings to express nullability (OpenAPI 3.1 convention).
 export interface SchemaObject {
   $ref?: string;
   type?: SchemaType | SchemaType[];
@@ -133,10 +126,6 @@ export interface SecuritySchemeObject {
   openIdConnectUrl?: string;
 }
 
-// Per OpenAPI 3.1 an oauth2 scheme MUST carry a `flows` object. Each individual
-// flow (implicit/password/clientCredentials/authorizationCode) is optional, so an
-// empty `{}` is spec-valid — which is all we can honestly emit, since the concrete
-// flow URLs live in Program.cs config and aren't statically recoverable.
 export interface OAuthFlowsObject {
   implicit?: OAuthFlowObject;
   password?: OAuthFlowObject;

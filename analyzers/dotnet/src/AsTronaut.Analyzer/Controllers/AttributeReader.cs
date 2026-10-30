@@ -2,9 +2,6 @@ using Microsoft.CodeAnalysis;
 
 namespace AsTronaut.Analyzer.Controllers;
 
-// Helpers for reading ASP.NET attribute metadata via Roslyn symbols. Attributes
-// are matched by their type name (with or without the "Attribute" suffix) so
-// shorthand forms ([HttpGet]) and full forms ([HttpGetAttribute]) both work.
 public static class AttributeReader
 {
     public static bool HasAttribute(ISymbol symbol, string name)
@@ -62,16 +59,11 @@ public static class AttributeReader
         return null;
     }
 
-    // All string constructor arguments in order, flattening params-array args
-    // (e.g. [Consumes("a", "b")] or [Produces("a", "b")]). Non-string args
-    // (a leading typeof(T)) are skipped.
     public static List<string> GetStringArgs(AttributeData attribute)
     {
         var result = new List<string>();
         foreach (var arg in attribute.ConstructorArguments)
         {
-            // Check Kind before touching Value: accessing .Value on an array
-            // TypedConstant throws.
             if (arg.Kind == TypedConstantKind.Array)
             {
                 foreach (var el in arg.Values)

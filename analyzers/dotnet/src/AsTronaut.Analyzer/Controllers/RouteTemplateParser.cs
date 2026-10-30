@@ -3,15 +3,6 @@ using AsTronaut.Analyzer.Ir;
 
 namespace AsTronaut.Analyzer.Controllers;
 
-// Parses an ASP.NET route template (e.g. "/api/users/{id:int:min(1)}") into
-// an OpenAPI-style path ("/api/users/{id}") and a list of typed ParamInfo.
-//
-// Recognised route constraint tokens for MVP:
-//   types     : int, long, double, float, decimal, bool, datetime, guid, alpha
-//   length    : minlength(N), maxlength(N), length(N), length(M,N)
-//   bounds    : min(N), max(N), range(M,N)
-//   pattern   : regex(<csharp-escaped>)
-// Token names taken from RouteConstraintBuilder in ASP.NET Core.
 public static class RouteTemplateParser
 {
     private static readonly Regex SegmentRegex = new("\\{([^}]+)\\}", RegexOptions.Compiled);
@@ -20,7 +11,6 @@ public static class RouteTemplateParser
 
     public static Result Parse(string template)
     {
-        // Trim trailing slashes (except root).
         var raw = template.Trim();
         if (raw.Length > 1 && raw.EndsWith('/')) raw = raw.TrimEnd('/');
         if (!raw.StartsWith('/')) raw = "/" + raw;
@@ -42,9 +32,6 @@ public static class RouteTemplateParser
 
     private static (string Name, Schema Schema) ParseToken(string token)
     {
-        // token like "id" or "id:int:min(1)" or "name=default" or "*catchall"
-        // For MVP: strip the catchall prefix '*' / '**', strip default value '=...',
-        // strip optional '?'. Constraints split by ':'.
         var work = token;
         if (work.StartsWith("**")) work = work.Substring(2);
         else if (work.StartsWith('*')) work = work.Substring(1);
@@ -71,7 +58,6 @@ public static class RouteTemplateParser
         return (name, schema);
     }
 
-    // Splits "id:regex(a:b):min(1)" into ["id", "regex(a:b)", "min(1)"] — respects parentheses.
     private static List<string> SplitConstraints(string token)
     {
         var parts = new List<string>();

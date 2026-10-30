@@ -5,10 +5,6 @@ import { AnalyzerNotFoundError } from "./errors.js";
 
 const ANALYZER_REL_PATH = "analyzers/dotnet/dist/AsTronaut.Analyzer.dll";
 
-// Resolution order:
-//   1. Caller-supplied path (handled by the caller, not here).
-//   2. ASTRONAUT_DOTNET_ANALYZER env var.
-//   3. analyzers/dotnet/dist/AsTronaut.Analyzer.dll relative to repo root.
 export function resolveDotnetAnalyzer(opts: { repoRootHint?: string } = {}): string {
   const envOverride = process.env.ASTRONAUT_DOTNET_ANALYZER;
   if (envOverride && envOverride.length > 0) {
@@ -32,7 +28,6 @@ export function resolveDotnetAnalyzer(opts: { repoRootHint?: string } = {}): str
 }
 
 function defaultRepoRootSearchPaths(): string[] {
-  // packages/parser-bridge/dist/resolveAnalyzer.js → repo root is three levels up.
   const here = dirname(fileURLToPath(import.meta.url));
   const fromBuild = resolve(here, "..", "..", "..", "..", ANALYZER_REL_PATH);
   const fromSrc = resolve(here, "..", "..", "..", ANALYZER_REL_PATH);

@@ -2,10 +2,6 @@ using System.Text.Json.Serialization;
 
 namespace AsTronaut.Analyzer.Ir;
 
-// IR DTOs — proto-aligned (camelCase JSON via JsonSerializerOptions). Fields use
-// strings instead of C# enums for HttpMethod / SchemaKind / PrimitiveType / AuthType
-// so that the JSON wire format exactly matches what the TS zod validator expects.
-
 public sealed record ParseResult
 {
     public List<RouteInfo> Routes { get; init; } = new();
@@ -18,7 +14,6 @@ public sealed record ParseResult
 
 public sealed record RouteInfo
 {
-    // "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS" | "TRACE"
     public string Method { get; init; } = "";
     public string Path { get; init; } = "";
 
@@ -54,7 +49,6 @@ public sealed record BodyInfo
     public string ContentType { get; init; } = "application/json";
     public Schema Schema { get; init; } = new();
     public bool Required { get; init; }
-    // All accepted content types (from [Consumes]); all share Schema.
     public List<string>? ContentTypes { get; init; }
 }
 
@@ -65,21 +59,17 @@ public sealed record ResponseInfo
     public Schema? Schema { get; init; }
     public string? ContentType { get; init; }
     public Dictionary<string, ParamInfo>? Headers { get; init; }
-    // All produced content types (from [Produces]); all share Schema.
     public List<string>? ContentTypes { get; init; }
 }
 
 public sealed record Schema
 {
-    // "PRIMITIVE" | "OBJECT" | "ARRAY" | "REFERENCE" | "ONE_OF" | "ANY_OF" | "ALL_OF"
     public string Kind { get; init; } = "PRIMITIVE";
 
     public string? RefName { get; init; }
 
-    // "string" | "integer" | "number" | "boolean" | "null"
     public string? PrimitiveType { get; init; }
 
-    // OpenAPI format hint: "int32" | "int64" | "date-time" | "uuid" | "email" | ...
     public string? Format { get; init; }
 
     public Dictionary<string, Schema>? Properties { get; init; }
@@ -94,10 +84,8 @@ public sealed record Schema
     public string? DefaultValue { get; init; }
     public string? Example { get; init; }
 
-    // For OBJECT maps: schema of the value type → OpenAPI additionalProperties.
     public Schema? AdditionalProperties { get; init; }
 
-    // For polymorphic ONE_OF: discriminator property name and value→refName map.
     public string? Discriminator { get; init; }
     public Dictionary<string, string>? DiscriminatorMapping { get; init; }
 }
@@ -120,11 +108,9 @@ public sealed record Constraints
 
 public sealed record AuthInfo
 {
-    // "http" | "apiKey" | "mutualTLS" | "oauth2" | "openIdConnect"
     public string Type { get; init; } = "";
     public string? Scheme { get; init; }
     public string? Name { get; init; }
-    // "header" | "query" | "cookie"
     public string? In { get; init; }
     public string? BearerFormat { get; init; }
     public string Id { get; init; } = "";
@@ -135,7 +121,6 @@ public sealed record ParseError
     public string File { get; init; } = "";
     public int Line { get; init; }
     public string Message { get; init; } = "";
-    // "warning" | "error"
     public string Severity { get; init; } = "error";
     public string? Code { get; init; }
 }

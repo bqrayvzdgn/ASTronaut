@@ -63,9 +63,6 @@ public static class Program
         var loadResult = await ProjectLoader.LoadAsync(projectPath, repoRoot);
         if (loadResult.Compilations.Count == 0)
         {
-            // Nothing to analyze. Still emit a valid ParseResult so the (E001)
-            // load-failure diagnostics are visible on stdout and `--strict`
-            // consumers can act on them; the exit code stays 1.
             var failure = new ParseResult
             {
                 Errors = loadResult.Diagnostics.ToList(),
@@ -81,8 +78,6 @@ public static class Program
             return 1;
         }
 
-        // One shared SchemaContext across every project so a DTO used by more
-        // than one project is hoisted exactly once.
         var schemaContext = new SchemaContext();
         var routes = new List<RouteInfo>();
         var errors = new List<ParseError>(loadResult.Diagnostics);

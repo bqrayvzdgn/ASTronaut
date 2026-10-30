@@ -7,9 +7,6 @@ import type {
   SecuritySchemeObject,
 } from "./types.js";
 
-// Semantic invariants the OpenAPI 3.1 meta-schema does not enforce but every
-// consumer relies on. The meta-schema check itself is not done here. Pure and
-// dependency-free so any caller (e.g. a future CLI `--check`) can share it.
 export type InvariantRule =
   | "unique-operation-ids"
   | "unique-parameters"
@@ -21,7 +18,6 @@ export type InvariantRule =
 
 export interface InvariantViolation {
   rule: InvariantRule;
-  /** Human-readable location, e.g. `paths./users/{id}.get.parameters[1]`. */
   path: string;
   message: string;
 }
@@ -51,7 +47,6 @@ export function checkOpenApiInvariants(doc: OpenApiDocument): InvariantViolation
       const at = `paths.${route}.${verb}`;
       checkOperationId(op, at, operationIds, out);
 
-      // Path-item level parameters apply to every operation beneath them.
       const params = [...(item.parameters ?? []), ...(op.parameters ?? [])];
       checkUniqueParameters(params, at, out);
       checkPathParams(params, placeholders, at, out);
@@ -116,7 +111,6 @@ function checkUniqueParameters(
   }
 }
 
-// "/users/{id}/posts/{postId}" → ["id", "postId"]
 function templatePlaceholders(route: string): string[] {
   const names: string[] = [];
   for (const match of route.matchAll(/\{([^}]+)\}/g)) {
@@ -126,8 +120,6 @@ function templatePlaceholders(route: string): string[] {
   return names;
 }
 
-// Every template placeholder needs an in:path parameter and vice versa, and
-// path parameters are always required (the spec forbids optional ones).
 function checkPathParams(
   params: ParameterObject[],
   placeholders: string[],
@@ -184,7 +176,6 @@ function checkSecurityRequirements(
   }
 }
 
-// 3.1 marks these sub-fields REQUIRED; without them the scheme is not usable.
 function checkSecurityScheme(
   scheme: SecuritySchemeObject,
   at: string,
@@ -206,9 +197,6 @@ function checkSecurityScheme(
   }
 }
 
-// Walks a schema through the positions the generator emits (properties, items,
-// oneOf/anyOf/allOf, object-form additionalProperties). `example` and `default`
-// hold data, not schemas, and are skipped on purpose.
 function checkSchema(
   schema: SchemaObject | null | undefined,
   at: string,
@@ -252,8 +240,6 @@ function checkSchema(
   }
 }
 
-// Only local refs into components.schemas are ever emitted; anything else is
-// unresolvable by construction.
 function checkRef(ref: string, at: string, names: Set<string>, out: InvariantViolation[]): void {
   const target = ref.startsWith(SCHEMA_REF_PREFIX) ? ref.slice(SCHEMA_REF_PREFIX.length) : null;
   if (target === null || !names.has(target)) {

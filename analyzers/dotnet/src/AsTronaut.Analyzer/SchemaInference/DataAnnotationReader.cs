@@ -3,25 +3,6 @@ using Microsoft.CodeAnalysis;
 
 namespace AsTronaut.Analyzer.SchemaInference;
 
-// Reads System.ComponentModel.DataAnnotations attributes off a symbol
-// (typically a property or parameter) and merges them into an IR Schema.
-//
-// Supported annotations:
-//   [Required]                        → property is required (handled by caller)
-//   [StringLength(N)]                 → maxLength = N  (string only)
-//   [StringLength(N, MinimumLength=M)]→ maxLength = N, minLength = M
-//   [MinLength(N)]                    → minLength/minItems (by target type)
-//   [MaxLength(N)]                    → maxLength/maxItems (by target type)
-//   [Range(min, max)]                 → minimum/maximum
-//   [Range(.., MinimumIsExclusive=true)] → exclusiveMinimum/exclusiveMaximum
-//   [Length(min, max)]                → min/maxLength or min/maxItems (by type)
-//   [RegularExpression(pattern)]      → pattern
-//   [EmailAddress]                    → format = "email"
-//   [Url]                             → format = "uri"
-//   [Phone]                           → format = "phone"
-//   [DataType(DataType.Date)]         → format = "date"
-//   [DataType(DataType.DateTime)]     → format = "date-time"
-//   [DataType(DataType.Password)]     → format = "password"
 public static class DataAnnotationReader
 {
     public static Schema Apply(Schema schema, ISymbol owner)
@@ -51,10 +32,6 @@ public static class DataAnnotationReader
         var touched = current.Constraints is not null;
         string? formatOverride = current.Format;
 
-        // MinLength/MaxLength/Length are dual-purpose in .NET: on a string they
-        // constrain character count, on a collection they constrain item count.
-        // The mapped schema already tells us which — arrays map to ARRAY, strings
-        // (and byte[]) to a PRIMITIVE — so key the emitted constraint off Kind.
         var isCollection = string.Equals(current.Kind, "ARRAY", StringComparison.Ordinal);
 
         foreach (var attr in attributes)
@@ -93,7 +70,6 @@ public static class DataAnnotationReader
                     break;
                 case "Range":
                     var (rmin, rmax) = ReadRange(attr);
-                    // .NET 8+ RangeAttribute can mark either bound exclusive.
                     var minExclusive = GetNamedBool(attr, "MinimumIsExclusive") == true;
                     var maxExclusive = GetNamedBool(attr, "MaximumIsExclusive") == true;
                     if (rmin.HasValue)
@@ -110,10 +86,6 @@ public static class DataAnnotationReader
                     }
                     break;
                 case "Length":
-                    // System.ComponentModel.DataAnnotations.LengthAttribute(min, max)
-                    // constrains string length OR collection item count depending on
-                    // the target type → min/maxLength for strings, min/maxItems for
-                    // collections.
                     if (TryGetInt(attr.ConstructorArguments, 0, out var lmin))
                     {
                         if (isCollection) constraints.MinItems = lmin;
@@ -159,9 +131,6 @@ public static class DataAnnotationReader
         };
     }
 
-    // True when the member carries a [Required] annotation
-    // (System.ComponentModel.DataAnnotations). Required-ness driven by an explicit
-    // annotation overrides nullability-based inference at the call site.
     public static bool HasRequired(ISymbol owner)
     {
         foreach (var attr in owner.GetAttributes())
@@ -232,11 +201,6 @@ public static class DataAnnotationReader
         var arg = attr.ConstructorArguments[0];
         if (arg.Type?.TypeKind != TypeKind.Enum) return null;
         if (arg.Value is not int ordinal) return null;
-        // System.ComponentModel.DataAnnotations.DataType enum members, by ordinal:
-        //   Custom=0, DateTime=1, Date=2, Time=3, Duration=4, PhoneNumber=5,
-        //   Currency=6, Text=7, Html=8, MultilineText=9, EmailAddress=10,
-        //   Password=11, Url=12, ImageUrl=13, CreditCard=14, PostalCode=15,
-        //   Upload=16. Members without a sensible OpenAPI format map to null.
         return ordinal switch
         {
             1 => "date-time",

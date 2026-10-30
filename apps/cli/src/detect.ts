@@ -4,18 +4,12 @@ import { ui } from "./ui.js";
 
 export interface DetectedProject {
   framework: "aspnet";
-  /** "solution" when the entry point is a .sln/.slnx, else a single project. */
   kind: "project" | "solution";
-  /** Path to the .csproj or .sln/.slnx that will be handed to the analyzer. */
   path: string;
 }
 
 const SOLUTION_EXTS = [".sln", ".slnx"];
 
-// Resolves the input into the file the analyzer should open. A solution takes
-// precedence over a bare .csproj so multi-project surface is captured. If the
-// input itself is a .csproj/.sln, it's returned directly. Returns null when
-// nothing analyzable is found — caller decides how to surface it.
 export function detectAspnetProject(inputPath: string): DetectedProject | null {
   if (!existsSync(inputPath)) return null;
   const stat = statSync(inputPath);
@@ -49,9 +43,6 @@ function isSolution(name: string): boolean {
   return SOLUTION_EXTS.some((ext) => lower.endsWith(ext));
 }
 
-// Walks the tree collecting every file whose name matches, skipping
-// build-output and dependency directories. Results are sorted by path so the
-// caller's pick is deterministic regardless of filesystem traversal order.
 function findMatches(dir: string, match: (name: string) => boolean): string[] {
   const found: string[] = [];
   const stack: string[] = [dir];

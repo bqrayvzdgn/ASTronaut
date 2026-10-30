@@ -7,17 +7,10 @@ using Microsoft.CodeAnalysis.MSBuild;
 
 namespace AsTronaut.Analyzer.Discovery;
 
-// Outcome of loading input: one Roslyn Compilation per C# project (a single
-// entry for a .csproj, potentially many for a .sln), plus any structured
-// diagnostics gathered while loading (e.g. MSBuild workspace failures, which
-// otherwise would only reach stderr). Empty Compilations = hard failure.
 public sealed record ProjectLoadResult(
     IReadOnlyList<Compilation> Compilations,
     IReadOnlyList<ParseError> Diagnostics);
 
-// Resolves an input path (directory, .csproj, or .sln/.slnx) into one or more
-// Roslyn Compilations by opening it through MSBuildWorkspace. A solution loads
-// every C# project so that API surface spread across projects is all analyzed.
 public static class ProjectLoader
 {
     private enum InputKind { Project, Solution }
@@ -87,11 +80,6 @@ public static class ProjectLoader
         return new ProjectLoadResult(compilations, diagnostics);
     }
 
-    // Resolves the C# projects of a solution. `.slnx` (the XML solution format)
-    // is parsed directly because not every bundled MSBuild can open it; classic
-    // `.sln` goes through the workspace. Either way, if the solution can't be
-    // resolved we fall back to opening every `.csproj` under its directory so a
-    // solution is never a hard failure.
     private static async Task<IReadOnlyList<Project>> OpenSolutionProjectsAsync(
         MSBuildWorkspace workspace, string path, List<ParseError> diagnostics, string repoRoot)
     {
@@ -105,10 +93,6 @@ public static class ProjectLoader
             try
             {
                 var solution = await workspace.OpenSolutionAsync(path);
-                // Roslyn returns projects in solution-file order, which is whatever
-                // the author (or tooling) happened to write. Sort by the separator-
-                // normalised path (PathOrder) so route and schema order — and the
-                // "bare" name a colliding DTO wins — is the same on every machine.
                 return solution.Projects
                     .OrderBy(p => PathOrder.Key(p.FilePath), StringComparer.Ordinal)
                     .ToList();
@@ -153,7 +137,6 @@ public static class ProjectLoader
         }
         catch
         {
-            // Malformed .slnx → caller falls back to directory scan.
         }
         return result;
     }
@@ -212,9 +195,6 @@ public static class ProjectLoader
             return null;
         }
 
-        // A solution takes precedence: it captures multi-project surface that a
-        // single .csproj would miss. Candidates are sorted Ordinal so the choice
-        // is deterministic regardless of filesystem enumeration order.
         var solutions = EnumerateSource(inputPath, "*.sln")
             .Concat(EnumerateSource(inputPath, "*.slnx"))
             .ToList();
@@ -238,8 +218,6 @@ public static class ProjectLoader
         return (InputKind.Project, Path.GetFullPath(projects[0]));
     }
 
-    // Emits both a stderr note and a structured W007 diagnostic recording that
-    // several candidates were found and which one was chosen deterministically.
     private static void WarnMultiple(
         List<ParseError> diagnostics, string repoRoot, string kind, IReadOnlyList<string> sorted)
     {
