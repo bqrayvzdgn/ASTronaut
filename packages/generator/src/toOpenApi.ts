@@ -5,7 +5,9 @@ import { schemaToJsonSchema } from "./schemaToJsonSchema.js";
 import type {
   ComponentsObject,
   OpenApiDocument,
+  OperationObject,
   PathItemObject,
+  SchemaObject,
   SecuritySchemeObject,
   TagObject,
 } from "./types.js";
@@ -40,7 +42,7 @@ export function toOpenApi(result: ParseResult, options: ToOpenApiOptions = {}): 
   const paths = buildPaths(result);
   if (paths) doc.paths = paths;
 
-  const components = buildComponents(result);
+  const components = buildComponents(result, paths);
   if (components) doc.components = components;
 
   const tags = collectTags(result);
@@ -57,7 +59,7 @@ function deriveTitle(result: ParseResult): string {
 function buildPaths(result: ParseResult): Record<string, PathItemObject> | undefined {
   if (result.routes.length === 0) return undefined;
   const paths: Record<string, PathItemObject> = {};
-  const usedOperationIds = new Set<string>();
+  const operations: OperationEntry[] = [];
   for (const route of result.routes) {
     const verb = HTTP_METHOD_TO_OPENAPI[route.method];
     if (!verb) continue;
@@ -69,45 +71,85 @@ function buildPaths(result: ParseResult): Record<string, PathItemObject> | undef
       continue;
     }
     const op = routeToOperation(route);
-    if (op.operationId)
-      op.operationId = uniqueOperationId(op.operationId, route.tags, usedOperationIds);
     (item as any)[verb] = op;
     paths[route.path] = item;
+    operations.push({ op, path: route.path, tag: route.tags?.[0] });
   }
+  assignOperationIds(operations);
   return paths;
 }
 
-function uniqueOperationId(base: string, tags: string[] | undefined, used: Set<string>): string {
-  if (!used.has(base)) {
-    used.add(base);
-    return base;
+interface OperationEntry {
+  op: OperationObject;
+  path: string;
+  tag: string | undefined;
+}
+
+function assignOperationIds(entries: OperationEntry[]): void {
+  const withId = entries.filter((e) => e.op.operationId);
+  const ids = new Map<OperationEntry, string>(withId.map((e) => [e, e.op.operationId as string]));
+
+  const baseCounts = countValues(ids.values());
+  for (const [entry, id] of ids) {
+    if ((baseCounts.get(id) ?? 0) > 1 && entry.tag) ids.set(entry, `${entry.tag}_${id}`);
   }
-  const tag = tags?.[0];
-  if (tag) {
-    const qualified = `${tag}_${base}`;
-    if (!used.has(qualified)) {
-      used.add(qualified);
-      return qualified;
+
+  const qualifiedCounts = countValues(ids.values());
+  for (const [entry, id] of ids) {
+    if ((qualifiedCounts.get(id) ?? 0) <= 1) continue;
+    const version = versionSegment(entry.path);
+    if (version) ids.set(entry, `${id}_${version}`);
+  }
+
+  const finalCounts = countValues(ids.values());
+  const used = new Set<string>();
+  for (const [, id] of ids) if ((finalCounts.get(id) ?? 0) === 1) used.add(id);
+  for (const [entry, id] of ids) {
+    if ((finalCounts.get(id) ?? 0) > 1) {
+      let candidate = id;
+      let n = 2;
+      while (used.has(candidate)) candidate = `${id}_${n++}`;
+      used.add(candidate);
+      ids.set(entry, candidate);
     }
+    entry.op.operationId = ids.get(entry) as string;
   }
-  let n = 2;
-  while (used.has(`${base}_${n}`)) n++;
-  const result = `${base}_${n}`;
-  used.add(result);
-  return result;
+}
+
+function countValues(values: Iterable<string>): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
+  return counts;
+}
+
+function versionSegment(path: string): string | undefined {
+  for (const segment of path.split("/")) {
+    if (/^v\d+(?:\.\d+)*$/i.test(segment)) return segment.toLowerCase().replace(/\./g, "_");
+  }
+  return undefined;
 }
 
 function warn(message: string): void {
   (globalThis as { console?: { warn(msg: string): void } }).console?.warn(message);
 }
 
-function buildComponents(result: ParseResult): ComponentsObject | undefined {
+function buildComponents(
+  result: ParseResult,
+  paths: Record<string, PathItemObject> | undefined,
+): ComponentsObject | undefined {
   const components: ComponentsObject = {};
 
   if (result.sharedSchemas && Object.keys(result.sharedSchemas).length > 0) {
-    components.schemas = {};
+    const all: Record<string, SchemaObject> = {};
     for (const [name, schema] of Object.entries(result.sharedSchemas)) {
-      components.schemas[name] = schemaToJsonSchema(schema);
+      all[name] = schemaToJsonSchema(schema);
+    }
+    const reachable = reachableSchemaNames(all, paths);
+    if (reachable.size > 0) {
+      components.schemas = {};
+      for (const name of Object.keys(all)) {
+        if (reachable.has(name)) components.schemas[name] = all[name] as SchemaObject;
+      }
     }
   }
 
@@ -118,6 +160,37 @@ function buildComponents(result: ParseResult): ComponentsObject | undefined {
 
   if (!components.schemas && !components.securitySchemes) return undefined;
   return components;
+}
+
+const SCHEMA_REF_PREFIX = "#/components/schemas/";
+
+function reachableSchemaNames(
+  schemas: Record<string, SchemaObject>,
+  paths: Record<string, PathItemObject> | undefined,
+): Set<string> {
+  const reachable = new Set<string>();
+  const queue: unknown[] = [paths];
+  while (queue.length > 0) {
+    collectRefs(queue.pop(), (ref) => {
+      if (!ref.startsWith(SCHEMA_REF_PREFIX)) return;
+      const name = ref.slice(SCHEMA_REF_PREFIX.length);
+      if (reachable.has(name) || !(name in schemas)) return;
+      reachable.add(name);
+      queue.push(schemas[name]);
+    });
+  }
+  return reachable;
+}
+
+function collectRefs(node: unknown, onRef: (ref: string) => void): void {
+  if (Array.isArray(node)) {
+    for (const child of node) collectRefs(child, onRef);
+  } else if (node !== null && typeof node === "object") {
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "$ref" && typeof value === "string") onRef(value);
+      else collectRefs(value, onRef);
+    }
+  }
 }
 
 function collectSecuritySchemes(result: ParseResult): Record<string, SecuritySchemeObject> {

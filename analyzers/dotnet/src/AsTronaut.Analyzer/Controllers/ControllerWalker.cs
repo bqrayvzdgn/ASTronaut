@@ -331,10 +331,10 @@ public sealed class ControllerWalker
                     UpsertPathParam(pathParams, paramInfo);
                     break;
                 case Binding.Query:
-                    AddQueryParams(queryParams, p, paramInfo);
+                    AddQueryParams(queryParams, p, paramInfo, typeMapper);
                     break;
                 case Binding.AsParameters:
-                    AddAsParameters(pathParams, queryParams, paramInfo, pathParamNames);
+                    AddAsParameters(pathParams, queryParams, p, paramInfo, pathParamNames, typeMapper);
                     break;
                 case Binding.Header:
                     headerParams.Add(paramInfo);
@@ -484,29 +484,31 @@ public sealed class ControllerWalker
         return Binding.Body;
     }
 
-    private void AddQueryParams(List<ParamInfo> queryParams, IParameterSymbol p, ParamInfo paramInfo)
+    private void AddQueryParams(
+        List<ParamInfo> queryParams, IParameterSymbol p, ParamInfo paramInfo, TypeToSchema typeMapper)
     {
         if (TypeClassifier.IsSimpleType(p.Type))
         {
             queryParams.Add(paramInfo);
             return;
         }
-        var obj = ResolveObjectSchema(paramInfo.Schema);
-        if (obj is null || obj.Properties.Count == 0)
+        var flattened = FlattenObjectParams(p, paramInfo, typeMapper);
+        if (flattened is null)
         {
             queryParams.Add(paramInfo);
             return;
         }
-        var required = obj.RequiredProperties;
-        foreach (var kvp in obj.Properties)
-        {
-            queryParams.Add(new ParamInfo
-            {
-                Name = kvp.Key,
-                Schema = kvp.Value,
-                Required = required.Contains(kvp.Key),
-            });
-        }
+        queryParams.AddRange(flattened);
+    }
+
+    private List<ParamInfo>? FlattenObjectParams(
+        IParameterSymbol p, ParamInfo paramInfo, TypeToSchema typeMapper)
+    {
+        var obj = ResolveObjectSchema(paramInfo.Schema);
+        if (obj is null || obj.Properties.Count == 0) return null;
+        if (p.Type is not INamedTypeSymbol named) return null;
+        var members = typeMapper.BuildQueryParams(named);
+        return members.Count == 0 ? null : members;
     }
 
     private static string ResolveParamName(IParameterSymbol p)
@@ -523,31 +525,26 @@ public sealed class ControllerWalker
     private void AddAsParameters(
         List<ParamInfo> pathParams,
         List<ParamInfo> queryParams,
+        IParameterSymbol p,
         ParamInfo paramInfo,
-        HashSet<string> pathParamNames)
+        HashSet<string> pathParamNames,
+        TypeToSchema typeMapper)
     {
-        var obj = ResolveObjectSchema(paramInfo.Schema);
-        if (obj is null || obj.Properties.Count == 0)
+        var flattened = FlattenObjectParams(p, paramInfo, typeMapper);
+        if (flattened is null)
         {
             queryParams.Add(paramInfo);
             return;
         }
-        var required = obj.RequiredProperties;
-        foreach (var kvp in obj.Properties)
+        foreach (var member in flattened)
         {
-            var flattened = new ParamInfo
+            if (pathParamNames.Contains(member.Name))
             {
-                Name = kvp.Key,
-                Schema = kvp.Value,
-                Required = required.Contains(kvp.Key),
-            };
-            if (pathParamNames.Contains(kvp.Key))
-            {
-                UpsertPathParam(pathParams, flattened);
+                UpsertPathParam(pathParams, member);
             }
             else
             {
-                queryParams.Add(flattened);
+                queryParams.Add(member);
             }
         }
     }

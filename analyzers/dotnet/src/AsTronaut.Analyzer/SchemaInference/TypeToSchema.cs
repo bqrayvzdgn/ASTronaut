@@ -1,6 +1,7 @@
 using AsTronaut.Analyzer.Controllers;
 using AsTronaut.Analyzer.Ir;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace AsTronaut.Analyzer.SchemaInference;
 
@@ -321,6 +322,59 @@ public sealed class TypeToSchema
             Properties = { properties },
             RequiredProperties = { required },
         };
+    }
+
+    public List<ParamInfo> BuildQueryParams(INamedTypeSymbol type)
+    {
+        var result = new List<ParamInfo>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        for (var t = type; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+        {
+            foreach (var member in t.GetMembers().OfType<IPropertySymbol>())
+            {
+                if (member.DeclaredAccessibility != Accessibility.Public) continue;
+                if (member.IsStatic || member.IsIndexer) continue;
+                if (member.GetMethod is null) continue;
+                if (IsJsonIgnored(member)) continue;
+
+                var name = ResolveQueryName(member);
+                if (!seen.Add(name)) continue;
+
+                var schema = DataAnnotationReader.Apply(Map(member.Type), member);
+                var required = member.IsRequired
+                    || DataAnnotationReader.HasRequired(member)
+                    || (IsRequiredMember(member.Type, requiredKeyword: false) && !HasDefaultValue(member));
+
+                result.Add(new ParamInfo { Name = name, Schema = schema, Required = required });
+            }
+        }
+        return result;
+    }
+
+    private static string ResolveQueryName(IPropertySymbol member)
+    {
+        var attr = AttributeReader.FindAttribute(member, "FromQuery", "FromRoute");
+        if (attr is not null)
+        {
+            var name = AttributeReader.GetNamedStringArg(attr, "Name");
+            if (!string.IsNullOrEmpty(name)) return name!;
+        }
+        return member.Name;
+    }
+
+    private static bool HasDefaultValue(IPropertySymbol property)
+    {
+        foreach (var reference in property.DeclaringSyntaxReferences)
+        {
+            switch (reference.GetSyntax())
+            {
+                case PropertyDeclarationSyntax { Initializer: not null }:
+                case ParameterSyntax { Default: not null }:
+                    return true;
+            }
+        }
+        return false;
     }
 
     private Schema BuildTupleSchema(INamedTypeSymbol tuple)
