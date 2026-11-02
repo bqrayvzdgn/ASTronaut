@@ -74,7 +74,28 @@ public static class ControllerResultReader
             {
                 CollectLambdaResults(lambda, model, mapper, into);
             }
+            else if (arg.Expression is IdentifierNameSyntax or MemberAccessExpressionSyntax)
+            {
+                CollectMethodGroup(arg.Expression, model, mapper, into);
+            }
         }
+    }
+
+    private static void CollectMethodGroup(
+        ExpressionSyntax expr, SemanticModel model, TypeToSchema mapper, List<ResponseInfo> into)
+    {
+        var info = model.GetSymbolInfo(expr);
+        var sym = info.Symbol as IMethodSymbol ?? info.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
+        if (sym is null || !IsControllerHelper(sym.ContainingType)) return;
+
+        ITypeSymbol? valueType = null;
+        if (model.GetTypeInfo(expr).ConvertedType is INamedTypeSymbol { DelegateInvokeMethod.Parameters.Length: 1 } del)
+        {
+            valueType = del.DelegateInvokeMethod.Parameters[0].Type;
+        }
+
+        var response = HttpResultConventions.MapMethodGroup(sym.Name, valueType, mapper);
+        if (response is not null) into.Add(response);
     }
 
     private static void CollectLambdaResults(

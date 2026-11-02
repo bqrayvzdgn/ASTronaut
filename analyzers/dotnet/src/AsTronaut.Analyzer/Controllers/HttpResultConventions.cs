@@ -40,6 +40,26 @@ public static class HttpResultConventions
         return response;
     }
 
+    public static ResponseInfo? MapMethodGroup(string helper, ITypeSymbol? valueType, TypeToSchema mapper)
+    {
+        if (helper == "StatusCode" || IsFileHelper(helper) || helper == "Content") return null;
+        var status = StatusByName(helper);
+        if (status is null) return null;
+
+        var response = new ResponseInfo
+        {
+            Status = status.Value,
+            Description = ResponseTypeReader.DescribeStatusPublic(status.Value),
+        };
+        if (valueType is not null
+            && valueType.SpecialType is not (SpecialType.System_Void or SpecialType.System_String))
+        {
+            response.Schema = mapper.Map(valueType);
+            response.ContentType = "application/json";
+        }
+        return response;
+    }
+
     public static List<ResponseInfo> Dedup(List<ResponseInfo> responses)
     {
         var byStatus = new Dictionary<int, ResponseInfo>();
@@ -57,7 +77,10 @@ public static class HttpResultConventions
         return byStatus.Values.OrderBy(r => r.Status).ToList();
     }
 
-    private static int? StatusFor(string helper, InvocationExpressionSyntax inv, SemanticModel model) => helper switch
+    private static int? StatusFor(string helper, InvocationExpressionSyntax inv, SemanticModel model) =>
+        helper == "StatusCode" ? ReadStatusCodeArg(inv, model) : StatusByName(helper);
+
+    private static int? StatusByName(string helper) => helper switch
     {
         "Ok" => 200,
         "Created" or "CreatedAtAction" or "CreatedAtRoute" => 201,
@@ -74,7 +97,6 @@ public static class HttpResultConventions
         "Redirect" or "LocalRedirect" => 302,
         "RedirectPermanent" or "LocalRedirectPermanent" => 301,
         "Json" or "Content" => 200,
-        "StatusCode" => ReadStatusCodeArg(inv, model),
         _ => null,
     };
 

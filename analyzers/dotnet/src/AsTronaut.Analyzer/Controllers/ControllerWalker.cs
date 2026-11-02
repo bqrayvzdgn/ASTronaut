@@ -703,8 +703,8 @@ public sealed class ControllerWalker
         if (string.IsNullOrEmpty(_repoRoot)) return path.Replace('\\', '/');
         try
         {
-            var rel = Path.GetRelativePath(_repoRoot, path);
-            return rel.Replace('\\', '/');
+            var rel = Path.GetRelativePath(_repoRoot, path).Replace('\\', '/');
+            return rel.StartsWith("../", StringComparison.Ordinal) ? path.Replace('\\', '/') : rel;
         }
         catch
         {

@@ -187,7 +187,8 @@ public static class ProjectLoader
         if (string.IsNullOrEmpty(repoRoot)) return path.Replace('\\', '/');
         try
         {
-            return Path.GetRelativePath(repoRoot, path).Replace('\\', '/');
+            var relative = Path.GetRelativePath(repoRoot, path).Replace('\\', '/');
+            return relative.StartsWith("../", StringComparison.Ordinal) ? path.Replace('\\', '/') : relative;
         }
         catch
         {
