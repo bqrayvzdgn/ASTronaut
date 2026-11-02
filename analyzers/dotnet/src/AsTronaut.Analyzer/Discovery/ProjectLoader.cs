@@ -63,7 +63,24 @@ public static class ProjectLoader
         {
             if (project.Language != LanguageNames.CSharp) continue;
             var compilation = await project.GetCompilationAsync();
-            if (compilation is not null) compilations.Add(compilation);
+            if (compilation is null) continue;
+            compilations.Add(compilation);
+
+            var unresolved = CountUnresolvedReferences(compilation);
+            if (unresolved > 0)
+            {
+                var message = $"{unresolved} unresolved type or namespace reference(s) in '{project.Name}'; "
+                    + "response and schema inference will be incomplete. Run 'dotnet restore' on the project first.";
+                StderrLog.Warn(message);
+                diagnostics.Add(new ParseError
+                {
+                    File = NormalizePath(project.FilePath ?? displayPath, repoRoot),
+                    Line = 0,
+                    Message = message,
+                    Severity = "warning",
+                    Code = DiagnosticCodes.UnresolvedReferences,
+                });
+            }
         }
 
         if (compilations.Count == 0)
@@ -79,6 +96,11 @@ public static class ProjectLoader
         }
         return new ProjectLoadResult(compilations, diagnostics);
     }
+
+    private static int CountUnresolvedReferences(Compilation compilation) =>
+        compilation.GetDiagnostics().Count(d =>
+            d.Severity == DiagnosticSeverity.Error
+            && d.Id is "CS0246" or "CS0234" or "CS0012" or "CS0400");
 
     private static async Task<IReadOnlyList<Project>> OpenSolutionProjectsAsync(
         MSBuildWorkspace workspace, string path, List<ParseError> diagnostics, string repoRoot)

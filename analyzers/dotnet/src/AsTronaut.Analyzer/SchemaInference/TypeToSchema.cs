@@ -168,6 +168,11 @@ public sealed class TypeToSchema
     {
         var members = enumType.GetMembers().OfType<IFieldSymbol>().Where(f => f.IsConst).ToList();
         var asString = _stringEnumsByDefault || HasStringEnumConverter(enumType);
+        var isFlags = AttributeReader.HasAttribute(enumType, "Flags");
+        var flagsDescription = isFlags
+            ? "Bit flags; values can be combined with bitwise OR. Members: "
+              + string.Join(", ", members.Select(f => $"{f.Name}={f.ConstantValue}"))
+            : "";
 
         if (asString)
         {
@@ -176,7 +181,8 @@ public sealed class TypeToSchema
             {
                 Kind = Schema.Types.Kind.Primitive,
                 PrimitiveType = "string",
-                Constraints = names.Count > 0 ? new Constraints { EnumValues = { names } } : null,
+                Description = flagsDescription,
+                Constraints = names.Count > 0 && !isFlags ? new Constraints { EnumValues = { names } } : null,
             };
         }
 
@@ -192,7 +198,8 @@ public sealed class TypeToSchema
             Kind = Schema.Types.Kind.Primitive,
             PrimitiveType = "integer",
             Format = format,
-            Constraints = values.Count > 0 ? new Constraints { EnumValues = { values } } : null,
+            Description = flagsDescription,
+            Constraints = values.Count > 0 && !isFlags ? new Constraints { EnumValues = { values } } : null,
         };
     }
 
@@ -324,7 +331,7 @@ public sealed class TypeToSchema
         };
     }
 
-    public List<ParamInfo> BuildQueryParams(INamedTypeSymbol type)
+    public List<ParamInfo> BuildQueryParams(INamedTypeSymbol type, bool valueTypesRequired = true)
     {
         var result = new List<ParamInfo>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -336,15 +343,19 @@ public sealed class TypeToSchema
                 if (member.DeclaredAccessibility != Accessibility.Public) continue;
                 if (member.IsStatic || member.IsIndexer) continue;
                 if (member.GetMethod is null) continue;
+                if (member.SetMethod is not { DeclaredAccessibility: Accessibility.Public }) continue;
                 if (IsJsonIgnored(member)) continue;
 
                 var name = ResolveQueryName(member);
                 if (!seen.Add(name)) continue;
 
                 var schema = DataAnnotationReader.Apply(Map(member.Type), member);
+                var implicitlyRequired = IsRequiredMember(member.Type, requiredKeyword: false)
+                    && (valueTypesRequired || !member.Type.IsValueType)
+                    && !HasDefaultValue(member);
                 var required = member.IsRequired
                     || DataAnnotationReader.HasRequired(member)
-                    || (IsRequiredMember(member.Type, requiredKeyword: false) && !HasDefaultValue(member));
+                    || implicitlyRequired;
 
                 result.Add(new ParamInfo { Name = name, Schema = schema, Required = required });
             }
