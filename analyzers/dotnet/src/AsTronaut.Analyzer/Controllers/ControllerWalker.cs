@@ -215,11 +215,17 @@ public sealed class ControllerWalker
 
     private static string CombineRoutes(string classRoute, string methodRoute)
     {
-        if (string.IsNullOrEmpty(methodRoute)) return classRoute;
-        if (methodRoute.StartsWith("/")) return methodRoute;
+        if (string.IsNullOrEmpty(methodRoute)) return AsAbsolute(classRoute);
+        if (IsAbsoluteTemplate(methodRoute)) return AsAbsolute(methodRoute);
         if (string.IsNullOrEmpty(classRoute)) return methodRoute;
         return classRoute.TrimEnd('/') + "/" + methodRoute.TrimStart('/');
     }
+
+    private static bool IsAbsoluteTemplate(string template) =>
+        template.StartsWith("/") || template.StartsWith("~/");
+
+    private static string AsAbsolute(string template) =>
+        template.StartsWith("~/") ? template.Substring(1) : template;
 
     private static string ApplyPlaceholders(string template, string typeName, string methodName)
     {
@@ -306,6 +312,7 @@ public sealed class ControllerWalker
         var queryParams = new List<ParamInfo>();
         var headerParams = new List<ParamInfo>();
         BodyInfo? body = null;
+        var formFields = new List<(ParamInfo Field, bool IsModel)>();
 
         var typeMapper = new TypeToSchema(_schemaContext, _stringEnums, _namingPolicy);
 
@@ -342,10 +349,13 @@ public sealed class ControllerWalker
                 case Binding.Body:
                     body = new BodyInfo
                     {
-                        ContentType = IsFormBinding(p) ? "multipart/form-data" : "application/json",
+                        ContentType = "application/json",
                         Schema = schema,
                         Required = paramInfo.Required,
                     };
+                    break;
+                case Binding.Form:
+                    formFields.Add((paramInfo, IsFormModel(p.Type, schema)));
                     break;
                 case Binding.Service:
                     break;
@@ -355,6 +365,10 @@ public sealed class ControllerWalker
         routeInfo.PathParams.Add(pathParams);
         routeInfo.QueryParams.Add(queryParams);
         routeInfo.HeaderParams.Add(headerParams);
+        if (body is null && formFields.Count > 0)
+        {
+            body = BuildFormBody(formFields);
+        }
         if (body is not null)
         {
             var consumes = ReadContentTypes(method, "Consumes");
@@ -463,12 +477,51 @@ public sealed class ControllerWalker
         pathParams.Add(incoming);
     }
 
-    private enum Binding { Path, Query, Header, Body, Service, AsParameters }
+    private enum Binding { Path, Query, Header, Body, Form, Service, AsParameters }
+
+    private static bool IsFormModel(ITypeSymbol type, Schema schema) =>
+        !TypeClassifier.IsFormFileType(type)
+        && !TypeClassifier.IsSimpleType(type)
+        && schema.Kind is Schema.Types.Kind.Reference or Schema.Types.Kind.Object;
+
+    private static BodyInfo BuildFormBody(List<(ParamInfo Field, bool IsModel)> fields)
+    {
+        if (fields.Count == 1 && fields[0].IsModel)
+        {
+            return new BodyInfo
+            {
+                ContentType = "multipart/form-data",
+                Schema = fields[0].Field.Schema,
+                Required = fields[0].Field.Required,
+            };
+        }
+
+        var properties = new Dictionary<string, Schema>();
+        var required = new List<string>();
+        foreach (var (field, _) in fields)
+        {
+            if (properties.ContainsKey(field.Name)) continue;
+            properties[field.Name] = field.Schema;
+            if (field.Required) required.Add(field.Name);
+        }
+        return new BodyInfo
+        {
+            ContentType = "multipart/form-data",
+            Schema = new Schema
+            {
+                Kind = Schema.Types.Kind.Object,
+                Properties = { properties },
+                RequiredProperties = { required },
+            },
+            Required = required.Count > 0,
+        };
+    }
 
     private static Binding ResolveBinding(IParameterSymbol parameter, HashSet<string> pathParamNames)
     {
         if (AttributeReader.HasAttribute(parameter, "AsParameters")) return Binding.AsParameters;
         if (AttributeReader.HasAttribute(parameter, "FromBody")) return Binding.Body;
+        if (AttributeReader.HasAttribute(parameter, "FromForm")) return Binding.Form;
         if (AttributeReader.HasAttribute(parameter, "FromRoute")) return Binding.Path;
         if (AttributeReader.HasAttribute(parameter, "FromQuery")) return Binding.Query;
         if (AttributeReader.HasAttribute(parameter, "FromHeader")) return Binding.Header;
@@ -478,6 +531,7 @@ public sealed class ControllerWalker
             return Binding.Service;
         }
 
+        if (TypeClassifier.IsFormFileType(parameter.Type)) return Binding.Form;
         if (TypeClassifier.IsServiceType(parameter.Type)) return Binding.Service;
         if (pathParamNames.Contains(parameter.Name)) return Binding.Path;
         if (TypeClassifier.IsSimpleType(parameter.Type)) return Binding.Query;
@@ -492,7 +546,7 @@ public sealed class ControllerWalker
             queryParams.Add(paramInfo);
             return;
         }
-        var flattened = FlattenObjectParams(p, paramInfo, typeMapper);
+        var flattened = FlattenObjectParams(p, paramInfo, typeMapper, valueTypesRequired: false);
         if (flattened is null)
         {
             queryParams.Add(paramInfo);
@@ -502,18 +556,18 @@ public sealed class ControllerWalker
     }
 
     private List<ParamInfo>? FlattenObjectParams(
-        IParameterSymbol p, ParamInfo paramInfo, TypeToSchema typeMapper)
+        IParameterSymbol p, ParamInfo paramInfo, TypeToSchema typeMapper, bool valueTypesRequired)
     {
         var obj = ResolveObjectSchema(paramInfo.Schema);
         if (obj is null || obj.Properties.Count == 0) return null;
         if (p.Type is not INamedTypeSymbol named) return null;
-        var members = typeMapper.BuildQueryParams(named);
+        var members = typeMapper.BuildQueryParams(named, valueTypesRequired);
         return members.Count == 0 ? null : members;
     }
 
     private static string ResolveParamName(IParameterSymbol p)
     {
-        var attr = AttributeReader.FindAttribute(p, "FromHeader", "FromQuery", "FromRoute");
+        var attr = AttributeReader.FindAttribute(p, "FromHeader", "FromQuery", "FromRoute", "FromForm");
         if (attr is not null)
         {
             var name = AttributeReader.GetNamedStringArg(attr, "Name");
@@ -530,7 +584,7 @@ public sealed class ControllerWalker
         HashSet<string> pathParamNames,
         TypeToSchema typeMapper)
     {
-        var flattened = FlattenObjectParams(p, paramInfo, typeMapper);
+        var flattened = FlattenObjectParams(p, paramInfo, typeMapper, valueTypesRequired: true);
         if (flattened is null)
         {
             queryParams.Add(paramInfo);
@@ -566,9 +620,6 @@ public sealed class ControllerWalker
                    ?? AttributeReader.FindAttribute(method.ContainingType, attrName);
         return attr is null ? new List<string>() : AttributeReader.GetStringArgs(attr);
     }
-
-    private static bool IsFormBinding(IParameterSymbol parameter) =>
-        AttributeReader.HasAttribute(parameter, "FromForm") || TypeClassifier.IsFormFileType(parameter.Type);
 
     private static List<ResponseInfo> BuildResponses(IMethodSymbol method, TypeToSchema mapper, string verb)
     {
@@ -652,8 +703,8 @@ public sealed class ControllerWalker
         if (string.IsNullOrEmpty(_repoRoot)) return path.Replace('\\', '/');
         try
         {
-            var rel = Path.GetRelativePath(_repoRoot, path);
-            return rel.Replace('\\', '/');
+            var rel = Path.GetRelativePath(_repoRoot, path).Replace('\\', '/');
+            return rel.StartsWith("../", StringComparison.Ordinal) ? path.Replace('\\', '/') : rel;
         }
         catch
         {

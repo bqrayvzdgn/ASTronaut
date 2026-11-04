@@ -28,7 +28,7 @@ public sealed class SchemaContext
 
     private string AllocateName(INamedTypeSymbol type)
     {
-        var simple = type.Name;
+        var simple = SchemaNameFor(type);
         if (!SharedSchemas.ContainsKey(simple)) return simple;
 
         var qualified = simple;
@@ -45,6 +45,18 @@ public sealed class SchemaContext
             if (!SharedSchemas.ContainsKey(candidate)) return candidate;
         }
     }
+
+    private static string SchemaNameFor(INamedTypeSymbol type) =>
+        type.TypeArguments.Length == 0
+            ? type.Name
+            : string.Concat(type.TypeArguments.Select(TypeArgumentName)) + type.Name;
+
+    private static string TypeArgumentName(ITypeSymbol type) => type switch
+    {
+        IArrayTypeSymbol array => TypeArgumentName(array.ElementType) + "Array",
+        INamedTypeSymbol named => SchemaNameFor(named),
+        _ => type.Name,
+    };
 
     private static IEnumerable<string> NamespaceSegmentsInnermostFirst(INamedTypeSymbol type)
     {

@@ -29,19 +29,92 @@ public static class ControllerResultReader
         var responses = new List<ResponseInfo>();
         foreach (var expr in exprs)
         {
-            var r = MapResult(expr, model, mapper);
-            if (r is not null) responses.Add(r);
+            CollectResults(expr, model, mapper, responses);
         }
         return responses.Count > 0 ? Dedup(responses) : null;
     }
 
-    private static ResponseInfo? MapResult(ExpressionSyntax expr, SemanticModel model, TypeToSchema mapper)
+    private static void CollectResults(
+        ExpressionSyntax expr, SemanticModel model, TypeToSchema mapper, List<ResponseInfo> into)
     {
-        if (expr is AwaitExpressionSyntax aw) expr = aw.Expression;
-        if (expr is not InvocationExpressionSyntax inv) return null;
-        if (model.GetSymbolInfo(inv).Symbol is not IMethodSymbol sym) return null;
-        if (!IsControllerHelper(sym.ContainingType)) return null;
-        return HttpResultConventions.Map(sym.Name, inv, model, mapper);
+        switch (expr)
+        {
+            case AwaitExpressionSyntax aw:
+                CollectResults(aw.Expression, model, mapper, into);
+                return;
+            case ParenthesizedExpressionSyntax paren:
+                CollectResults(paren.Expression, model, mapper, into);
+                return;
+            case ConditionalExpressionSyntax cond:
+                CollectResults(cond.WhenTrue, model, mapper, into);
+                CollectResults(cond.WhenFalse, model, mapper, into);
+                return;
+            case SwitchExpressionSyntax sw:
+                foreach (var arm in sw.Arms) CollectResults(arm.Expression, model, mapper, into);
+                return;
+            case InvocationExpressionSyntax inv:
+                CollectInvocation(inv, model, mapper, into);
+                return;
+        }
+    }
+
+    private static void CollectInvocation(
+        InvocationExpressionSyntax inv, SemanticModel model, TypeToSchema mapper, List<ResponseInfo> into)
+    {
+        if (model.GetSymbolInfo(inv).Symbol is IMethodSymbol sym && IsControllerHelper(sym.ContainingType))
+        {
+            var response = HttpResultConventions.Map(sym.Name, inv, model, mapper);
+            if (response is not null) into.Add(response);
+            return;
+        }
+
+        foreach (var arg in inv.ArgumentList.Arguments)
+        {
+            if (arg.Expression is AnonymousFunctionExpressionSyntax lambda)
+            {
+                CollectLambdaResults(lambda, model, mapper, into);
+            }
+            else if (arg.Expression is IdentifierNameSyntax or MemberAccessExpressionSyntax)
+            {
+                CollectMethodGroup(arg.Expression, model, mapper, into);
+            }
+        }
+    }
+
+    private static void CollectMethodGroup(
+        ExpressionSyntax expr, SemanticModel model, TypeToSchema mapper, List<ResponseInfo> into)
+    {
+        var info = model.GetSymbolInfo(expr);
+        var sym = info.Symbol as IMethodSymbol ?? info.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
+        if (sym is null || !IsControllerHelper(sym.ContainingType)) return;
+
+        ITypeSymbol? valueType = null;
+        if (model.GetTypeInfo(expr).ConvertedType is INamedTypeSymbol { DelegateInvokeMethod.Parameters.Length: 1 } del)
+        {
+            valueType = del.DelegateInvokeMethod.Parameters[0].Type;
+        }
+
+        var response = HttpResultConventions.MapMethodGroup(sym.Name, valueType, mapper);
+        if (response is not null) into.Add(response);
+    }
+
+    private static void CollectLambdaResults(
+        AnonymousFunctionExpressionSyntax lambda, SemanticModel model, TypeToSchema mapper, List<ResponseInfo> into)
+    {
+        if (lambda.ExpressionBody is { } expressionBody)
+        {
+            CollectResults(expressionBody, model, mapper, into);
+            return;
+        }
+        if (lambda.Block is not { } block) return;
+
+        var returns = block
+            .DescendantNodes(n => n is not AnonymousFunctionExpressionSyntax)
+            .OfType<ReturnStatementSyntax>();
+        foreach (var ret in returns)
+        {
+            if (ret.Expression is { } e) CollectResults(e, model, mapper, into);
+        }
     }
 
     private static bool IsControllerHelper(INamedTypeSymbol? type)

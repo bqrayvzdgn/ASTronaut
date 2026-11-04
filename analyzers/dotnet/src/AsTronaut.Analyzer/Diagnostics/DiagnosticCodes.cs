@@ -10,5 +10,7 @@ public static class DiagnosticCodes
 
     public const string MultipleProjects = "W007";
 
+    public const string UnresolvedReferences = "W008";
+
     public const string ProjectLoadFailed = "E001";
 }
