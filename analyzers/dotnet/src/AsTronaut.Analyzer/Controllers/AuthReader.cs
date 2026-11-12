@@ -29,16 +29,10 @@ public static class AuthReader
         var schemes = AttributeReader.GetNamedStringArg(authAttr, "AuthenticationSchemes");
         var scheme = ChooseScheme(schemes);
 
+        // An ASP.NET authorization policy has no OpenAPI equivalent. Keep the id
+        // as a stable, spec-compliant component key (^[a-zA-Z0-9._-]+$) shared by
+        // every operation that uses the same scheme, instead of suffixing ":policy".
         var id = scheme.Id;
-        if (string.IsNullOrWhiteSpace(schemes))
-        {
-            var policy = AttributeReader.GetNamedStringArg(authAttr, "Policy");
-            if (!string.IsNullOrWhiteSpace(policy))
-            {
-                id = $"{scheme.Id}:{policy!.Trim()}";
-            }
-        }
-
         var info = new AuthInfo { Type = scheme.Type, Id = id };
         if (scheme.Scheme is not null) info.Scheme = scheme.Scheme;
         if (scheme.Name is not null) info.Name = scheme.Name;

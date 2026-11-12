@@ -34,6 +34,7 @@ public sealed class ControllerWalker
     private readonly SchemaContext _schemaContext;
     private readonly bool _stringEnums;
     private readonly JsonNamingPolicyKind? _namingPolicy;
+    private readonly HashSet<string> _operationIds = new(StringComparer.Ordinal);
 
     public ControllerWalker(Compilation compilation, string repoRoot, SchemaContext schemaContext)
     {
@@ -280,6 +281,16 @@ public sealed class ControllerWalker
             : typeName;
     }
 
+    private string UniqueOperationId(string baseId, string tag)
+    {
+        if (_operationIds.Add(baseId)) return baseId;
+        var qualified = $"{tag}_{baseId}";
+        if (_operationIds.Add(qualified)) return qualified;
+        var n = 2;
+        while (!_operationIds.Add($"{baseId}_{n}")) n++;
+        return $"{baseId}_{n}";
+    }
+
     private RouteInfo BuildRoute(
         IMethodSymbol method,
         string verb,
@@ -292,7 +303,7 @@ public sealed class ControllerWalker
         {
             Method = verb,
             Path = parsed.NormalizedPath,
-            OperationId = method.Name,
+            OperationId = UniqueOperationId(method.Name, classTag),
             Tags = { classTag },
             Source = MakeSourceLocation(method, filePath),
         };
@@ -306,6 +317,7 @@ public sealed class ControllerWalker
         var queryParams = new List<ParamInfo>();
         var headerParams = new List<ParamInfo>();
         BodyInfo? body = null;
+        var formFields = new List<ParamInfo>();
 
         var typeMapper = new TypeToSchema(_schemaContext, _stringEnums, _namingPolicy);
 
@@ -340,12 +352,19 @@ public sealed class ControllerWalker
                     headerParams.Add(paramInfo);
                     break;
                 case Binding.Body:
-                    body = new BodyInfo
+                    if (IsFormBinding(p))
                     {
-                        ContentType = IsFormBinding(p) ? "multipart/form-data" : "application/json",
-                        Schema = schema,
-                        Required = paramInfo.Required,
-                    };
+                        formFields.Add(paramInfo);
+                    }
+                    else
+                    {
+                        body = new BodyInfo
+                        {
+                            ContentType = "application/json",
+                            Schema = schema,
+                            Required = paramInfo.Required,
+                        };
+                    }
                     break;
                 case Binding.Service:
                     break;
@@ -355,6 +374,10 @@ public sealed class ControllerWalker
         routeInfo.PathParams.Add(pathParams);
         routeInfo.QueryParams.Add(queryParams);
         routeInfo.HeaderParams.Add(headerParams);
+        if (formFields.Count > 0)
+        {
+            body = BuildFormBody(formFields);
+        }
         if (body is not null)
         {
             var consumes = ReadContentTypes(method, "Consumes");
@@ -472,6 +495,7 @@ public sealed class ControllerWalker
         if (AttributeReader.HasAttribute(parameter, "FromRoute")) return Binding.Path;
         if (AttributeReader.HasAttribute(parameter, "FromQuery")) return Binding.Query;
         if (AttributeReader.HasAttribute(parameter, "FromHeader")) return Binding.Header;
+        if (AttributeReader.HasAttribute(parameter, "FromForm")) return Binding.Body;
         if (AttributeReader.HasAttribute(parameter, "FromServices")
             || AttributeReader.HasAttribute(parameter, "FromKeyedServices"))
         {
@@ -572,6 +596,40 @@ public sealed class ControllerWalker
 
     private static bool IsFormBinding(IParameterSymbol parameter) =>
         AttributeReader.HasAttribute(parameter, "FromForm") || TypeClassifier.IsFormFileType(parameter.Type);
+
+    private static BodyInfo BuildFormBody(List<ParamInfo> formFields)
+    {
+        if (formFields.Count == 1)
+        {
+            var single = formFields[0];
+            return new BodyInfo
+            {
+                ContentType = "multipart/form-data",
+                Schema = single.Schema,
+                Required = single.Required,
+            };
+        }
+
+        var properties = new Dictionary<string, Schema>();
+        var required = new List<string>();
+        foreach (var field in formFields)
+        {
+            properties[field.Name] = field.Schema;
+            if (field.Required) required.Add(field.Name);
+        }
+
+        return new BodyInfo
+        {
+            ContentType = "multipart/form-data",
+            Schema = new Schema
+            {
+                Kind = Schema.Types.Kind.Object,
+                Properties = { properties },
+                RequiredProperties = { required },
+            },
+            Required = formFields.Any(f => f.Required),
+        };
+    }
 
     private static List<ResponseInfo> BuildResponses(IMethodSymbol method, TypeToSchema mapper, string verb)
     {
