@@ -23,13 +23,22 @@ export async function runAnalyzer(options: RunAnalyzerOptions): Promise<ParseRes
     args.push("--cwd", options.repoRootHint);
   }
 
-  const { stdout, stderrTail, exitCode } = await spawnCollect(
+  const { stdout, stderrTail, exitCode, timedOut } = await spawnCollect(
     "dotnet",
     args,
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
   );
 
   if (exitCode !== 0) {
+    const recovered = tryParse(stdout);
+    if (recovered) return recovered;
+    if (timedOut) {
+      const timeout = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+      throw new AnalyzerCrashedError(
+        exitCode,
+        `Analyzer timed out after ${timeout}ms.\n--- stderr (tail) ---\n${stderrTail}`,
+      );
+    }
     throw new AnalyzerCrashedError(exitCode, stderrTail);
   }
 
@@ -67,6 +76,23 @@ interface SpawnResult {
   stdout: string;
   stderrTail: string;
   exitCode: number;
+  timedOut: boolean;
+}
+
+function tryParse(stdout: string): ParseResult | null {
+  const trimmed = stdout.trim();
+  if (trimmed.length === 0) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  try {
+    return parseIR(parsed);
+  } catch {
+    return null;
+  }
 }
 
 function spawnCollect(cmd: string, args: string[], timeoutMs: number): Promise<SpawnResult> {
@@ -105,7 +131,7 @@ function spawnCollect(cmd: string, args: string[], timeoutMs: number): Promise<S
         .subarray(Math.max(0, stderrAll.length - STDERR_TAIL_BYTES))
         .toString("utf8");
       const exitCode = timedOut ? 124 : (code ?? 1);
-      resolvePromise({ stdout, stderrTail, exitCode });
+      resolvePromise({ stdout, stderrTail, exitCode, timedOut });
     });
   });
 }
