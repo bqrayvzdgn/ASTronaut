@@ -2,7 +2,7 @@ import { writeFileSync } from "node:fs";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { ParseResult } from "@astronaut/core";
-import { toJson, toOpenApi, toYaml } from "@astronaut/generator";
+import { checkOpenApiInvariants, toJson, toOpenApi, toYaml } from "@astronaut/generator";
 import {
   AnalyzerCrashedError,
   AnalyzerNotFoundError,
@@ -49,7 +49,17 @@ export async function analyzeCommand(rawPath: string, options: AnalyzeOptions): 
     return 1;
   }
   if (result.routes.length === 0) {
-    ui.error("Analyzer found 0 routes. Nothing to emit.");
+    ui.error(
+      "Analyzer found 0 routes. Nothing to emit. Check that scanned controllers " +
+        "derive from ControllerBase/Controller or carry [ApiController], and that no " +
+        "analyzer error diagnostic was reported above.",
+    );
+    return 1;
+  }
+
+  const duplicateCount = reportDuplicateRoutes(result);
+  if (options.strict && duplicateCount > 0) {
+    ui.error(`Strict mode: ${duplicateCount} duplicate route(s).`);
     return 1;
   }
 
@@ -59,6 +69,16 @@ export async function analyzeCommand(rawPath: string, options: AnalyzeOptions): 
     version: options.version ?? projectInfo.version,
     ...(projectInfo.description !== undefined ? { description: projectInfo.description } : {}),
   });
+
+  const violations = checkOpenApiInvariants(doc);
+  for (const v of violations) {
+    ui.warn(`OpenAPI invariant [${v.rule}] ${v.path}: ${v.message}`);
+  }
+  if (options.strict && violations.length > 0) {
+    ui.error(`Strict mode: ${violations.length} OpenAPI invariant violation(s).`);
+    return 1;
+  }
+
   const serialized = options.json ? toJson(doc) : toYaml(doc);
 
   if (options.output) {
@@ -71,6 +91,21 @@ export async function analyzeCommand(rawPath: string, options: AnalyzeOptions): 
     ui.success(`Emitted ${result.routes.length} route(s)`);
   }
   return 0;
+}
+
+function reportDuplicateRoutes(result: ParseResult): number {
+  const seen = new Set<string>();
+  let count = 0;
+  for (const route of result.routes) {
+    const key = `${route.method} ${route.path}`;
+    if (seen.has(key)) {
+      ui.warn(`Duplicate route ${route.method} ${route.path}; keeping the first.`);
+      count++;
+    } else {
+      seen.add(key);
+    }
+  }
+  return count;
 }
 
 function reportDiagnostics(result: ParseResult): void {

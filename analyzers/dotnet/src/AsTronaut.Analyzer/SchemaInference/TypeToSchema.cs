@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AsTronaut.Analyzer.Controllers;
 using AsTronaut.Analyzer.Ir;
 using Microsoft.CodeAnalysis;
@@ -155,7 +156,10 @@ public sealed class TypeToSchema
         if (type is INamedTypeSymbol named
             && named.TypeKind is TypeKind.Class or TypeKind.Struct)
         {
-            if (named.IsAnonymousType) return BuildClassSchema(named);
+            if (named.IsAnonymousType || named.DeclaredAccessibility != Accessibility.Public)
+            {
+                return BuildClassSchema(named);
+            }
             return HasPolymorphism(named)
                 ? _ctx.GetOrCreateReference(named, () => BuildPolymorphicSchema(named))
                 : _ctx.GetOrCreateReference(named, () => BuildClassSchema(named));
@@ -170,7 +174,7 @@ public sealed class TypeToSchema
 
         if (asString)
         {
-            var names = members.Select(f => $"\"{ResolveEnumMemberName(f)}\"").ToList();
+            var names = members.Select(f => JsonSerializer.Serialize(ResolveEnumMemberName(f))).ToList();
             return new Schema
             {
                 Kind = Schema.Types.Kind.Primitive,

@@ -48,7 +48,8 @@ export function checkIR(result: ParseResult): IRIssue[] {
   const issues: IRIssue[] = [];
   const fail = (path: string, message: string) => issues.push({ path, message });
 
-  result.routes.forEach((route, i) => checkRoute(route, `routes.${i}`, fail));
+  const refNames = new Set(Object.keys(result.sharedSchemas));
+  result.routes.forEach((route, i) => checkRoute(route, `routes.${i}`, fail, refNames));
   result.errors.forEach((error, i) => {
     const at = `errors.${i}`;
     nonNegative(error.line, `${at}.line`, fail);
@@ -67,21 +68,21 @@ export function checkIR(result: ParseResult): IRIssue[] {
   }
 
   for (const [name, schema] of Object.entries(result.sharedSchemas)) {
-    checkSchema(schema, `sharedSchemas.${name}`, fail);
+    checkSchema(schema, `sharedSchemas.${name}`, fail, refNames);
   }
   return issues;
 }
 
 type Fail = (path: string, message: string) => void;
 
-function checkRoute(route: RouteInfo, at: string, fail: Fail): void {
+function checkRoute(route: RouteInfo, at: string, fail: Fail, refNames: Set<string>): void {
   oneOf(route.method, HTTP_METHODS, `${at}.method`, fail);
   if (!route.path.startsWith("/")) fail(`${at}.path`, 'must start with "/"');
-  route.pathParams.forEach((p, i) => checkParam(p, `${at}.pathParams.${i}`, fail));
-  route.queryParams.forEach((p, i) => checkParam(p, `${at}.queryParams.${i}`, fail));
-  route.headerParams.forEach((p, i) => checkParam(p, `${at}.headerParams.${i}`, fail));
-  if (route.requestBody) checkBody(route.requestBody, `${at}.requestBody`, fail);
-  route.responses.forEach((r, i) => checkResponse(r, `${at}.responses.${i}`, fail));
+  route.pathParams.forEach((p, i) => checkParam(p, `${at}.pathParams.${i}`, fail, refNames));
+  route.queryParams.forEach((p, i) => checkParam(p, `${at}.queryParams.${i}`, fail, refNames));
+  route.headerParams.forEach((p, i) => checkParam(p, `${at}.headerParams.${i}`, fail, refNames));
+  if (route.requestBody) checkBody(route.requestBody, `${at}.requestBody`, fail, refNames);
+  route.responses.forEach((r, i) => checkResponse(r, `${at}.responses.${i}`, fail, refNames));
   if (route.auth) checkAuth(route.auth, `${at}.auth`, fail);
   if (!route.source) {
     fail(`${at}.source`, "is required");
@@ -91,24 +92,24 @@ function checkRoute(route: RouteInfo, at: string, fail: Fail): void {
   }
 }
 
-function checkParam(param: ParamInfo, at: string, fail: Fail): void {
+function checkParam(param: ParamInfo, at: string, fail: Fail, refNames: Set<string>): void {
   if (param.name.length === 0) fail(`${at}.name`, "must not be empty");
   if (!param.schema) fail(`${at}.schema`, "is required");
-  else checkSchema(param.schema, `${at}.schema`, fail);
+  else checkSchema(param.schema, `${at}.schema`, fail, refNames);
 }
 
-function checkBody(body: BodyInfo, at: string, fail: Fail): void {
+function checkBody(body: BodyInfo, at: string, fail: Fail, refNames: Set<string>): void {
   if (body.contentType.length === 0) fail(`${at}.contentType`, "must not be empty");
   if (!body.schema) fail(`${at}.schema`, "is required");
-  else checkSchema(body.schema, `${at}.schema`, fail);
+  else checkSchema(body.schema, `${at}.schema`, fail, refNames);
   contentTypes(body.contentTypes, `${at}.contentTypes`, fail);
 }
 
-function checkResponse(response: ResponseInfo, at: string, fail: Fail): void {
+function checkResponse(response: ResponseInfo, at: string, fail: Fail, refNames: Set<string>): void {
   if (response.status < 100 || response.status > 599) fail(`${at}.status`, "must be 100-599");
-  if (response.schema) checkSchema(response.schema, `${at}.schema`, fail);
+  if (response.schema) checkSchema(response.schema, `${at}.schema`, fail, refNames);
   for (const [name, header] of Object.entries(response.headers)) {
-    checkParam(header, `${at}.headers.${name}`, fail);
+    checkParam(header, `${at}.headers.${name}`, fail, refNames);
   }
   contentTypes(response.contentTypes, `${at}.contentTypes`, fail);
 }
@@ -119,18 +120,24 @@ function checkAuth(auth: AuthInfo, at: string, fail: Fail): void {
   if (auth.id.length === 0) fail(`${at}.id`, "must not be empty");
 }
 
-function checkSchema(schema: Schema, at: string, fail: Fail): void {
+function checkSchema(schema: Schema, at: string, fail: Fail, refNames: Set<string>): void {
+  if (schema.refName !== undefined) {
+    if (schema.refName.length === 0) fail(`${at}.refName`, "must not be empty");
+    else if (!refNames.has(schema.refName)) {
+      fail(`${at}.refName`, `references undefined schema "${schema.refName}"`);
+    }
+  }
   if (schema.primitiveType !== undefined) {
     oneOf(schema.primitiveType, PRIMITIVE_TYPES, `${at}.primitiveType`, fail);
   }
   for (const [name, property] of Object.entries(schema.properties)) {
-    checkSchema(property, `${at}.properties.${name}`, fail);
+    checkSchema(property, `${at}.properties.${name}`, fail, refNames);
   }
-  if (schema.items) checkSchema(schema.items, `${at}.items`, fail);
-  schema.variants.forEach((v, i) => checkSchema(v, `${at}.variants.${i}`, fail));
+  if (schema.items) checkSchema(schema.items, `${at}.items`, fail, refNames);
+  schema.variants.forEach((v, i) => checkSchema(v, `${at}.variants.${i}`, fail, refNames));
   if (schema.constraints) checkConstraints(schema.constraints, `${at}.constraints`, fail);
   if (schema.additionalProperties) {
-    checkSchema(schema.additionalProperties, `${at}.additionalProperties`, fail);
+    checkSchema(schema.additionalProperties, `${at}.additionalProperties`, fail, refNames);
   }
 }
 

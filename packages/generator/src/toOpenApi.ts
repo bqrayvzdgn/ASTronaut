@@ -16,7 +16,9 @@ export interface ToOpenApiOptions {
   description?: string;
 }
 
-const HTTP_METHOD_TO_OPENAPI: Record<string, keyof PathItemObject> = {
+type HttpVerb = "get" | "put" | "post" | "delete" | "options" | "head" | "patch" | "trace";
+
+const HTTP_METHOD_TO_OPENAPI: Record<string, HttpVerb> = {
   GET: "get",
   PUT: "put",
   POST: "post",
@@ -62,7 +64,7 @@ function buildPaths(result: ParseResult): Record<string, PathItemObject> | undef
     const verb = HTTP_METHOD_TO_OPENAPI[route.method];
     if (!verb) continue;
     const item = paths[route.path] ?? {};
-    if ((item as any)[verb] !== undefined) {
+    if (item[verb] !== undefined) {
       warn(
         `Duplicate route ${route.method} ${route.path}; keeping the first and skipping the duplicate.`,
       );
@@ -71,7 +73,7 @@ function buildPaths(result: ParseResult): Record<string, PathItemObject> | undef
     const op = routeToOperation(route);
     if (op.operationId)
       op.operationId = uniqueOperationId(op.operationId, route.tags, usedOperationIds);
-    (item as any)[verb] = op;
+    item[verb] = op;
     paths[route.path] = item;
   }
   return paths;

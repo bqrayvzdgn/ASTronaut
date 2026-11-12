@@ -18,7 +18,8 @@ public sealed class SchemaContext
         }
         var name = AllocateName(type);
         _registered[key] = name;
-        SharedSchemas[name] = new Schema { Kind = Schema.Types.Kind.Object };
+        // Name is registered before build() so self-referencing types resolve to a
+        // REFERENCE instead of recursing infinitely; a placeholder entry is unneeded.
         SharedSchemas[name] = build();
         return new Schema { Kind = Schema.Types.Kind.Reference, RefName = name };
     }

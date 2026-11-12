@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.RegularExpressions;
+using Microsoft.CodeAnalysis;
 using AsTronaut.Analyzer.Controllers;
 using AsTronaut.Analyzer.Discovery;
 using AsTronaut.Analyzer.Ir;
@@ -47,10 +49,20 @@ public static class Program
         var repoRoot = Directory.GetCurrentDirectory();
         for (int i = 1; i < args.Length; i++)
         {
-            if (args[i] == "--cwd" && i + 1 < args.Length)
+            if (args[i] == "--cwd")
             {
+                if (i + 1 >= args.Length)
+                {
+                    StderrLog.Error("--cwd requires a path argument.");
+                    return null;
+                }
                 repoRoot = args[i + 1];
                 i++;
+            }
+            else
+            {
+                StderrLog.Error($"Unknown argument: {args[i]}");
+                return null;
             }
         }
         return (projectPath, repoRoot);
@@ -82,6 +94,8 @@ public static class Program
         var routes = new List<RouteInfo>();
         var errors = new List<ParseError>(loadResult.Diagnostics);
         var filesScanned = 0;
+        var scannedFiles = new HashSet<string>(StringComparer.Ordinal);
+        var frameworkVersion = DetectFrameworkVersion(loadResult.Compilations.FirstOrDefault());
 
         foreach (var compilation in loadResult.Compilations)
         {
@@ -90,7 +104,10 @@ public static class Program
 
             routes.AddRange(controllerWalker.Routes);
             errors.AddRange(controllerWalker.Errors);
-            filesScanned += compilation.SyntaxTrees.Count();
+            foreach (var tree in compilation.SyntaxTrees)
+            {
+                if (scannedFiles.Add(tree.FilePath)) filesScanned++;
+            }
         }
 
         var result = new ParseResult
@@ -106,9 +123,27 @@ public static class Program
             },
             SharedSchemas = { schemaContext.SharedSchemas },
         };
+        if (frameworkVersion is not null)
+        {
+            result.Metadata.FrameworkVersion = frameworkVersion;
+        }
 
         WriteJson(result);
         return 0;
+    }
+
+    private static string? DetectFrameworkVersion(Compilation? compilation)
+    {
+        if (compilation is null) return null;
+        foreach (var reference in compilation.References)
+        {
+            var display = reference.Display;
+            if (display is null) continue;
+            if (!display.Contains("Microsoft.AspNetCore", StringComparison.Ordinal)) continue;
+            var match = Regex.Match(display, @"Version=(\d+\.\d+\.\d+\.\d+)");
+            if (match.Success) return match.Groups[1].Value;
+        }
+        return null;
     }
 
     private static void WriteJson(IMessage message)
